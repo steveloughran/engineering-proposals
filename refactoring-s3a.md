@@ -6,6 +6,7 @@
 |------|----------|----------|
 | 2019-03-15 | 0.0 alpha | initial draft |
 | 2019-04-05 | 0.1 beta | published |
+| 2019-05-07 | 0.2 beta | updated from rename experience |
  
 # Introduction
 
@@ -126,7 +127,7 @@ However, it is probably too late to do that without making backporting a nightma
 At the very least, new utils can be partitioned into their own class by function.
 
 
-## Three layers: Two Model, one View
+## Three layers: Two Model, one View, "Operations"
 
 Move to a model/view world, but with two models: the hierarchial FS view presented by S3Guard + S3, and the lower S3 layer. 
 
@@ -136,8 +137,33 @@ To avoid the under layers becoming single large classes on their own, break up t
 Benefits: better isolation of functionality.
 Weakness: what about if feature (a) needs feature (b)?
 You've just lost that isolation and added more complexity.
-Maybe we can do more at the `S3AStore` level, where features are given a ref to the `S3ABase` so can interact directly with that, along with the metastore
+Maybe we can do more at the `S3AStore` level, where features are given a ref to the `StoreContext` so can interact directly with that, along with the metastore
 
+### "Operations"
+
+Some of the Emulations of filesystem operations are very complex, especially those
+working with directories including, inevitably, rename.
+
+These operations can be be pulled out into their own "Operations" classes,
+each of which is instantiated for the life of the filesystem-level operation.
+
+* _Operations_ hide the lower level details of a sequence of actions within their
+own class.
+* _Operations_ must never be given a reference to the S3AFileSystem which owns them.
+* _Operations_ are given a `StoreContext` in their constructor.
+
+This is intended to pull out the complex workflows into their own isolated classes,
+structured so that they can have isolated unit tests, where possible.
+
+These Operations resemble the [_Command Pattern_](http://wiki.c2.com/?CommandPattern) of
+Gamma et al; however there is no expected notion of an "Undo" operation.
+Nor are they transactions. They are merely a way of isolating
+filesystem-level pieces of work into their own classes and ensuring that their
+interactions are solely with the layers below.
+
+*Note*: without clean layering, the initial operations will end
+up calling back into the S3A FS -but this can/should be done by providing
+explicit callbacks, rather than a reference to the base class.
 
 
 ## Structure
@@ -158,19 +184,19 @@ FileSystem instance (as Delegation Token support does, ).
 Where the FS does need to be invoked, we use a `Function` type so that
 any implementation of the function can be invoked
 
-* the filesystem URI
-* the instance of `S3AInstrumentation` for instrumentation.
-* the executor pool.
-* bucket location (`S3AFileSystem.getBucketLocation()`)
-* the FileSystem instance's `Configuration`
+* The filesystem URI
+* The instance of `S3AInstrumentation` for instrumentation.
+* The executor pool.
+* Bucket location (`S3AFileSystem.getBucketLocation()`)
+* The FileSystem instance's `Configuration`
 * User agent to use in requests.
-* User creating FS
+* The User who created the filesystem instance.
 * Metastore, if present.
 * The functions to map from a key to a path and a path to a key for this filesystem.
 * `Invoker` instances from the FS, which contain recovery policies
 * `ChangeDetectionPolicy`
 * Maybe: `Logger` of FS.
-* Configuration flags extracted from the FS state: multiObjectDeleteEnabled, useListV2,///
+* Configuration flags extracted from the FS state: multiObjectDeleteEnabled, useListV2,...
 * DirectoryAllocator and `createTmpFileForWrite()` method (Use: `S3ADataBlocks`)
 
 Instrumentation, including:
@@ -187,10 +213,20 @@ with lambda expression or FS methods.
 * Credential sharing `shareCredentials()` (used in `DynamoDBMetadataStore` + some tests).
 * `operationRetried()`
 
+To aid in execution of work, rather than just expose the thread pool,
+an operation to create new `SemaphoredDelegatingExecutor` instances shall be
+provided, one which throttles the amount of active work a single operation
+can consume.
 
-### `org.apache.hadoop.fs.s3a.impl.S3ABase`
+This is important for slow operations (bulk uploads), and for many small operations
+(single dynamoDB uploads, POST requests, etc). Operations which use
+completable futures to asynchronous work SHOULD be submitted through such an
+executor, so that a single operation (bulk deletes of 1000+ files on DDB, etc)
+do not starve all other threads trying to use the same S3A instance.
 
-`S3ABase` talks directly to S3 -and is the only place where we do this.
+### `org.apache.hadoop.fs.s3a.impl.StoreContext`
+
+`StoreContext` talks directly to S3 -and is the only place where we do this.
 
 Some operations would be at the S3 model layer, e.g. `getObjectMetadata`: the filesystem
 view should not be preserved.
@@ -200,11 +236,14 @@ view should not be preserved.
   will be a field here.
 * And it is passed in a reference to the executor threadpool for async operations
 * parameters are generally simple keys rather than Paths
-* new operations move to an async API, in anticipation of a move to async AWS SDK 2.0.
+* 
+* New operations MAY move to an async API, in anticipation of a move to async AWS SDK 2.0.
   But: need to look at that future SDK to make sure the work here is compatible.
 
-What about moving to a grand Java-8 `completableFuture` world everywhere?
-Risk of over-ambition with a programming model we haven't fully understood in practise.
+Q. What about moving to a grand Java-8 `completableFuture` world everywhere?
+A. Risk of over-ambition with a programming model we haven't used enough to really
+know how best to use. Becaus this is intended to private, mmoving to an async
+API can be done internally.
 
 
 ### `org.apache.hadoop.fs.s3a.impl.S3AStore` + `StoreImpl`
@@ -213,8 +252,9 @@ This layer has a notion of a filesystem with directories & can assume: paths are
 
 * Have an interface/impl split for ease of building a mock impl & so aid testing the view layer.
   (this is potentially really hard, and given Sean is doing a mock S3Client for HBoss, possibly 
-  superflous. But if we start with a (private) interface, we can preserver it.
-* Contains references to `S3ABase` and the `S3Guard` Metastore.
+  superflous. But if we start with a (private) interface, we can change that interface
+  without worrying about breaking compatibility
+* Contains references to `StoreContext` and the `S3Guard` Metastore.
 * Calls here have consistency. `WriteOperationsHelper` will generally invoke operations
 at this level.
 * If operations are invoked here which need access to specific files in `S3AFilesystem`,
@@ -371,7 +411,7 @@ as those can run all the way back to branch-2; it'd be too traumatic to do that 
 
 ## Issues
 
-Can we really do a clean separation of `S3ABase` operations from the FileSystem model?
+Can we really do a clean separation of `StoreContext` operations from the FileSystem model?
 The context which comes down is likely to take a `Path` reference at the very least; it's things like rename, mkdirs &c which we could try to keep away
 
 How do we do this in a backport-friendly way? 
