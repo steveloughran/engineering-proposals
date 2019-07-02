@@ -127,15 +127,17 @@ However, it is probably too late to do that without making backporting a nightma
 At the very least, new utils can be partitioned into their own class by function.
 
 
-## Three layers: Two Model, one View, "Operations"
+# Proposed: Three layers: Two Model, one View, "Operations"
 
 Move to a model/view world, but with two models: the hierarchial FS view presented by S3Guard + S3, and the lower S3 layer. 
 
 The FileSystem API is the view.
 
 To avoid the under layers becoming single large classes on their own, break up them by feature `MultiObjectDeleteSupport`, `CopySupport` which can be maintained & cherry picked independently.
-Benefits: better isolation of functionality.
-Weakness: what about if feature (a) needs feature (b)?
+
+* Benefits: better isolation of functionality.
+* Weakness: what about if feature (a) needs feature (b)?
+
 You've just lost that isolation and added more complexity.
 Maybe we can do more at the `S3AStore` level, where features are given a ref to the `StoreContext` so can interact directly with that, along with the metastore
 
@@ -328,7 +330,7 @@ All the java-8 lambda level support which isn't added to hadoop-common for broad
 
 ## Testing 
 
-## What works
+### What works
 
 * `AbstractS3ATestBase` as base class for most tests.
 * Parallel test runs.
@@ -430,3 +432,259 @@ retain. However, future work can pick up the structure of it as appropriate.
 
 
 
+## Experience of HADOOP-15183 rename work
+
+HADOOP-15183 started some of this work with a `StoreContext`, instantiable via
+`S3AFileSystem.createStoreContext()`.
+
+### `StoreContext`
+
+```java
+public class StoreContext {
+
+  URI fsURI;
+  String bucket;
+  Configuration configuration;
+  String username;
+  UserGroupInformation owner;
+  ListeningExecutorService executor;
+  int executorCapacity;
+  Invoker invoker;
+  S3AInstrumentation instrumentation;
+  S3AStorageStatistics storageStatistics;
+  S3AInputPolicy inputPolicy;
+  ChangeDetectionPolicy changeDetectionPolicy;
+  boolean multiObjectDeleteEnabled;
+  boolean useListV1;
+  MetadataStore metadataStore;
+  ContextAccessors contextAccessors;
+  ITtlTimeProvider timeProvider;
+}
+```
+
+Initially some lamba expressions were used for operations (e.g getBucketLocation()),
+but this didn't scale. Instead a ContextAccessors interfacve was written to
+offer those functions which operations may need. There's a non-static
+implementation of this in S3AFileSystem, and another in the unit test
+`TestPartialDeleteFailures`
+
+
+```java
+interface ContextAccessors {
+
+  /**
+   * Convert a key to a fully qualified path.
+   * @param key input key
+   * @return the fully qualified path including URI scheme and bucket name.
+   */
+  Path keyToPath(String key);
+
+  /**
+   * Turns a path (relative or otherwise) into an S3 key.
+   *
+   * @param path input path, may be relative to the working dir
+   * @return a key excluding the leading "/", or, if it is the root path, ""
+   */
+  String pathToKey(Path path);
+
+  /**
+   * Create a temporary file.
+   * @param prefix prefix for the temporary file
+   * @param size the size of the file that is going to be written
+   * @return a unique temporary file
+   * @throws IOException IO problems
+   */
+  File createTempFile(String prefix, long size) throws IOException;
+
+  /**
+   * Get the region of a bucket. This may be via an S3 API call if not
+   * already cached.
+   * @return the region in which a bucket is located
+   * @throws IOException on any failure.
+   */
+  @Retries.RetryTranslated
+  String getBucketLocation() throws IOException;
+}
+  ```
+  
+  Note: all new new stuff is going into `org.apache.hadoop.fs.s3a.impl` to make
+  clear it's not for public play.
+  
+  
+
+### `AbstractStoreOperation`
+
+Base class for short/medium length operations:
+
+```java
+/**
+ * Base class of operations in the store.
+ * An operation is something which executes against the context to
+ * perform a single function.
+ * It is expected to have a limited lifespan.
+ */
+public abstract class AbstractStoreOperation {
+
+  private final StoreContext storeContext;
+
+  /**
+   * constructor.
+   * @param storeContext store context.
+   */
+  protected AbstractStoreOperation(final StoreContext storeContext) {
+    this.storeContext = checkNotNull(storeContext);
+  }
+
+  /**
+   * Get the store context.
+   * @return the context.
+   */
+  public final StoreContext getStoreContext() {
+    return storeContext;
+  }
+
+}
+
+```
+
+This was originally used for the rename trackers, but, at Gabor Bota's suggestion,
+most of the `S3AFileSystem.rename()` operation was pulled out into one too.
+Doing that added a need to call various operations in S3AFileSystem.
+Rather than give up and say "here's your S3AFS", a new interface purely for
+those rename callbacks was added, with an implementation class in S3AFS
+
+```java
+
+public interface RenameOperationCallbacks {
+
+  S3ObjectAttributes createObjectAttributes(
+      Path path,
+      String eTag,
+      String versionId,
+      long len);
+
+  S3ObjectAttributes createObjectAttributes(
+      S3AFileStatus fileStatus);
+
+  S3AReadOpContext createReadContext( FileStatus fileStatus);
+
+  void finishRename(Path sourceRenamed, Path destCreated) throws IOException;
+
+  @Retries.RetryMixed
+  void deleteObjectAtPath(Path path, String key, boolean isFile)
+      throws IOException;
+
+  RemoteIterator<S3ALocatedFileStatus> listFilesAndEmptyDirectories(
+      Path path) throws IOException;
+
+  @Retries.RetryTranslated
+  CopyResult copyFile(String srcKey,
+      String destKey,
+      S3ObjectAttributes srcAttributes,
+      S3AReadOpContext readContext)
+      throws IOException;
+
+  @Retries.RetryMixed
+  void removeKeys(
+      List<DeleteObjectsRequest.KeyVersion> keysToDelete,
+      boolean deleteFakeDir,
+      List<Path> undeletedObjectsOnFailure)
+      throws MultiObjectDeleteException, AmazonClientException,
+      IOException;
+}
+```
+
+It'd be an ugly mess if every factored out operation had a similar
+(interface, implementation) pair, but if you look at the operations,
+none of these are directly at the Hadoop FS API level, more one level down
+`copyFile()`, or at the S3 layer `removeKeys()`. Paths and keys get used
+a bit interchangeably. 
+
+As for `finishedRename()`, it triggers the work needed to maintain the 
+filesystem metaphor
+
+```java
+public void finishRename(final Path sourceRenamed, final Path destCreated)
+    throws IOException {
+  Path destParent = destCreated.getParent();
+  if (!sourceRenamed.getParent().equals(destParent)) {
+    LOG.debug("source & dest parents are different; fix up dir markers");
+    deleteUnnecessaryFakeDirectories(destParent);
+    maybeCreateFakeParentDirectory(sourceRenamed);
+  }
+}
+```
+
+## BulkOperationState for the Metastores
+
+To avoid massively amplifying the number of DDB PUT operations in the rename,
+an abstract `BulkOperationState` class was implemented, which metastore implementations
+can use to track their ongoing state. The default is `null`
+
+```java
+default BulkOperationState initiateBulkWrite(
+    BulkOperationState.OperationType operation,
+    Path dest) throws IOException {
+  return null;
+}
+```
+
+1. All mutating operations in the Metastore API were extended to take this
+state. In the DynamoDB store, operations update this state as they write data,
+recording which ancestor entries have been written. This avoids duplication
+on single-file renames within a bulk rename, and single commits in a job commit.
+
+For this to work, the state needs to be requested at the start of the bulk
+operation and passed back at the end. 
+
+For the rename process, this was manageable in the new code.
+
+For the commit process, a lot of retrofitting was needed to pass this back
+without tainting the S3A committers with knowledge of metastore state.
+This was handled by making the existing `CommitOperations` class's commit/abort
+operations private and providing a non-static inner class, `CommitContext`
+which would be instantiaed with the `BulkOperationState` and then invoke
+the `CommitOperation`'s commit/abort/revert methods, passing in that
+`BulkOperationState` instance as appropriate;
+
+`WriteOperationHelper` the low-level internal API to S3AFileSystem also needed
+updating to take an optional `BulkOperationState` to wire this together.
+
+As a result: there's a lot more state passing by way of new parameters.
+ 
+The `CommitContext` class actually simplified a bit of the S3A committer code
+though, so it is not all bad.
+
+
+## Troublespots
+
+* We now have more classes to worry about. If every FS-level action is its own
+`AbstractStoreOperation`, then there'll be one per API call.
+
+* S3AFilesystem has added two new interfaces implementations as nested classes.
+The first, the `ContextAccessors` for the store context is meant to be
+general; it will evolve. As for any per-operation interfaces, a sign a
+refactored design is correctly layered is if all operations only
+call downwards to the levels below.
+
+* Wiring up new ongoing state, such as `BulkOperationState`, went through a
+lot of the code. This created merge conflict with onther ongoing work.
+
+* None of this stuff is going to be easily backportable. From now on, the
+first step to backporting subsequent changes is going to be the HADOOP-15183
+patch.
+
+A more radical restructing of the codebase is going be a full "bridge-burning"
+module rewrite. If we believe it is needed, then it has to be done.
+We just all need to be aware of the consequences. 
+
+We also need to avoid going "version 2.0" on the rework, taking this
+as a chance to add new features because they've been on our wish list for
+some time, or as placeholders for work which we don't immediately have
+on our development plans. 
+
+We should be able to take what we have and relayer it, while adding more notions
+of context/state in the process.
+If this is restricted to the existing S3AFileSystem and WriteOperationHelper,
+without adding new features, we could have minimum-viable-refactoring lining
+us up for future development.
