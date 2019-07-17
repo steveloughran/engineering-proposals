@@ -726,7 +726,7 @@ Initial targed: new classes added in Hadoop 3.3. These have no backport cost wit
 
 The S3Guard `BulkOperationState` class is becoming something more broadly passed around
 (HADOOP-16430)[https://issues.apache.org/jira/browse/HADOOP-16430]. Rather than do this everywhere,
-an `OperationContext` class should be defined which we can extend.
+an `OperationContext` class should be defined which we can extend over time.
 
 | Field | Type | Purpose |
 |-------|------|---------|
