@@ -437,6 +437,13 @@ retain. However, future work can pick up the structure of it as appropriate.
 HADOOP-15183 started some of this work with a `StoreContext`, instantiable via
 `S3AFileSystem.createStoreContext()`.
 
+At the time of writing, with all this new code, the length of the S3AFileSystem
+is now 4200 lines, so it hasn't got any shorter. But: The new incremental
+and parallelized rename code, along with handling of partial deletes was
+all a fair amount of work. Apart from the context setup and operation
+instantiation and invocation, this has all be done outside the core FS,
+and is lined up for working with a relayered S3A filesystem.
+
 ### `StoreContext`
 
 ```java
@@ -506,11 +513,10 @@ interface ContextAccessors {
   String getBucketLocation() throws IOException;
 }
   ```
-  
-  Note: all new new stuff is going into `org.apache.hadoop.fs.s3a.impl` to make
-  clear it's not for public play.
-  
-  
+
+*Note*: all new new stuff is going into `org.apache.hadoop.fs.s3a.impl` to make
+clear it's not for public play.
+
 
 ### `AbstractStoreOperation`
 
@@ -615,7 +621,7 @@ public void finishRename(final Path sourceRenamed, final Path destCreated)
 }
 ```
 
-## BulkOperationState for the Metastores
+## `BulkOperationState` for the Metastores
 
 To avoid massively amplifying the number of DDB PUT operations in the rename,
 an abstract `BulkOperationState` class was implemented, which metastore implementations
@@ -671,7 +677,7 @@ call downwards to the levels below.
 lot of the code. This created merge conflict with onther ongoing work.
 
 * None of this stuff is going to be easily backportable. From now on, the
-first step to backporting subsequent changes is going to be the HADOOP-15183
+first step to backporting subsequent changes in the HADOOP-15183
 patch.
 
 A more radical restructing of the codebase is going be a full "bridge-burning"
@@ -685,6 +691,64 @@ on our development plans.
 
 We should be able to take what we have and relayer it, while adding more notions
 of context/state in the process.
-If this is restricted to the existing S3AFileSystem and WriteOperationHelper,
+If this is restricted to the existing `S3AFileSystem` and `WriteOperationHelper`,
 without adding new features, we could have minimum-viable-refactoring lining
 us up for future development.
+
+## Next Steps
+
+
+### Role out `StoreContext`, especially in 3.3 classes
+
+The new `StoreContext` class should be usable as the binding argument for
+those subcomponents of the S3A connector which are currently passed
+a direct `S3AFileSystem` reference.
+
+* `WriteOperationHelper`. This will implicitly switch those classes which
+use that as the low-level API for store operations to using the store context
+* `S3ABlockOutputStream` (which also takes a `WriteOperationHelper`)
+* `org.apache.hadoop.fs.s3a.Listing`
+* `org.apache.hadoop.fs.s3a.commit.MagicCommitIntegration`
+* `org.apache.hadoop.fs.s3a.S3ADataBlocks`
+* `AbstractDTService` and `S3ADelegationTokens`. Issue: any implementation
+of `AbstractDTService` is going to break here, which means any S3A
+delegation token binding outside of the `hadoop-aws` module.
+* the S3Guard Metastore implementations, especially `DynamoDBMetadataStore`.
+
+These can be done one at a time; there's no obvious gain from doing it in bulk.
+We could consider moving some of them (Listing; `S3ADataBlocks`) into the `.impl`
+package at the same time, again, at a cost of backport pain.
+
+Initial targed: new classes added in Hadoop 3.3. These have no backport cost within the ASF branches.
+
+
+### Design an `OperationContext` for propagating through `innerXYZ` operations.
+
+The S3Guard `BulkOperationState` class is becoming something more broadly passed around
+(HADOOP-16430)[https://issues.apache.org/jira/browse/HADOOP-16430]. Rather than do this everywhere,
+an `OperationContext` class should be defined which we can extend.
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `bulkOperationState` | `BulkOperationState` | nullable ref to any ongoing S3Guard bulk operation |
+| `userAgentSuffix` | `String` | optional suffix to user agent (request tracking) |
+| `requestSigner` | callback | whatever signs requests |
+| `trace` | openTrace ref | opentrace context |
+
+The `bulkOperationState` field would not be final; it can be created on demand, after which it is used until closed.
+_Issue_: need to make sure that once closed it is removed from the context; maybe make way to close one 
+the `close()` operation in this context. Only a select few bulk operations (rename, delete, commit, purge, import, fsck) need
+bulk operation state now; if their lifecycle is managed from within the `AbstractStoreOperation` implementing them, then
+this becomes less complex. We just need a setter for the state which has the precondition: if the new state is non-null, the
+current state MUST be null.
+
+Per-requset UA suffix, Auth and openTrace are all features some of us have been discussing informally.
+There's no implementation of these features, which can all be added in the future. What is key is that
+creating and passing round an `OperationContext` everywhere, rather than a `BulkOperationState`, isolates
+code from the details of S3Guard, while giving us the ability to add these features without adding yet another parameter across
+every single function, caller and test which needs it.
+
+  
+
+
+
