@@ -7,6 +7,7 @@
 | 2019-03-15 | 0.0 alpha | initial draft |
 | 2019-04-05 | 0.1 beta | published |
 | 2019-05-07 | 0.2 beta | updated from rename experience |
+| 2019-07-23 | 0.2.1 beta | Operation Context |
  
 # Introduction
 
@@ -37,7 +38,7 @@ doesn't increase.
 
 * Submitting work into the `ExecutorService` thread pools (bounded and unbounded), e.g async block writes, and with `openFile()`, async file opening, 
 
-* the inner-operation calls which don't do the final lossy translation of exceptions
+* The inner-operation calls which don't do the final lossy translation of exceptions
 into error codes and the like, especially for those operations (`rename()`) which
 downgrade failures to a "return 0".
 
