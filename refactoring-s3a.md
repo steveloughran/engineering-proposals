@@ -698,7 +698,7 @@ us up for future development.
 ## Next Steps
 
 
-### Role out `StoreContext`, especially in 3.3 classes
+### Role out `StoreContext`, especially in 3.3+ classes
 
 The new `StoreContext` class should be usable as the binding argument for
 those subcomponents of the S3A connector which are currently passed
