@@ -8,6 +8,7 @@
 | 2019-04-05 | 0.1 beta | published |
 | 2019-05-07 | 0.2 beta | updated from rename experience |
 | 2019-07-23 | 0.2.1 beta | Operation Context |
+| 2019-10-01 | 0.3.0 | Another revision |
  
 # Introduction
 
@@ -210,7 +211,9 @@ Instrumentation, including:
 
 Operations which rely to the filesystem, or, during testing, other implementations
 of the Functions. These will all be `Function` interfaces which can be configured
-with lambda expression or FS methods.
+with -lambda expression or FS methods-. 
+*update* No, via an interface `ContextAccessors` with an implementation in `S3AFileSystem`
+plus others in test suites as appropriate.
 
 * `metastoreOperationRetried()` (used in `DynamoDBMetadataStore`).
 * Credential sharing `shareCredentials()` (used in `DynamoDBMetadataStore` + some tests).
@@ -227,9 +230,9 @@ completable futures to asynchronous work SHOULD be submitted through such an
 executor, so that a single operation (bulk deletes of 1000+ files on DDB, etc)
 do not starve all other threads trying to use the same S3A instance.
 
-### `org.apache.hadoop.fs.s3a.impl.StoreContext`
+### `org.apache.hadoop.fs.s3a.impl.S3Access`
 
-`StoreContext` talks directly to S3 -and is the only place where we do this.
+`S3Access` talks directly to S3 -and is the only place where we do this.
 
 Some operations would be at the S3 model layer, e.g. `getObjectMetadata`: the filesystem
 view should not be preserved.
@@ -239,7 +242,6 @@ view should not be preserved.
   will be a field here.
 * And it is passed in a reference to the executor threadpool for async operations
 * parameters are generally simple keys rather than Paths
-* 
 * New operations MAY move to an async API, in anticipation of a move to async AWS SDK 2.0.
   But: need to look at that future SDK to make sure the work here is compatible.
 
@@ -251,19 +253,19 @@ API can be done internally.
 
 ### `org.apache.hadoop.fs.s3a.impl.S3AStore` + `StoreImpl`
 
-This layer has a notion of a filesystem with directories & can assume: paths are qualified.
+This layer has a notion of a filesystem with directories and can assume: paths are qualified.
 
-* Have an interface/impl split for ease of building a mock impl & so aid testing the view layer.
+* Have an interface/impl split for ease of building a mock impl and so aid testing the view layer.
   (this is potentially really hard, and given Sean is doing a mock S3Client for HBoss, possibly 
   superflous. But if we start with a (private) interface, we can change that interface
   without worrying about breaking compatibility
-* Contains references to `StoreContext` and the `S3Guard` Metastore.
+* Contains references to `S3Access` and the `S3Guard` Metastore.
 * Calls here have consistency. `WriteOperationsHelper` will generally invoke operations
 at this level.
 * If operations are invoked here which need access to specific files in `S3AFilesystem`,
 rather than pass in a reference to the owner,
 the specific fields are passed down as contructor parameters, `StoreContext` and, when appropriate,
-method parameters, including an OperationContext. 
+method parameters, including an `OperationContext`. 
 
 
 ### `org.apache.hadoop.fs.s3a.S3AFileSystem`
@@ -273,7 +275,7 @@ The external view of the store: public APIs. The class which brings things toget
 All the FS methods are here; as we move things into the layers below. Ideally it should
 be fairly thin: it's the view, not not the model
 
-## `S3AOpContext`: Context passed with operations.
+## `S3AOpContext`: Context passed with operations (existing; to be extended).
 
 `S3AOpContext` tuned to remove the destination field, and only have notion of: primary and S3Guard invoker; (future) trace context, statistics.
 Maybe: factor out `TraceContext` which only includes trace info (not invokers), and is actually passed in to the Invoker operations for better tracing.
@@ -283,11 +285,14 @@ Maybe: factor out `TraceContext` which only includes trace info (not invokers), 
 * Include FileStatus of pre-operation source and dest as optional fields.
 If present, operations can use these rather than issue new requests for the data -and update as they do so.
 
-* Credentials if per-request credentails are to be used
+* Credentials if per-request credentails are to be used.
 
-### `S3AWriteOpContext`: 
 
-`S3AWriteOperationContext extends S3AOpContext`: equivalent of the `S3AReadOpContext`; tracks a write across threads. 
+
+### `S3AWriteOperationContext`:  new 
+
+`S3AWriteOperationContext extends S3AOpContext`: equivalent of the `S3AReadOpContext`;
+tracks a write across threads. 
 
 
 * Add `Configuration` map of options set in the `createFile()` builder;
@@ -308,11 +313,12 @@ We create exactly one of these right now; `S3AFileSystem.getWriteOperationHelper
 If we make it per-instance and add a `S3AWriteOperationContext` as a constructor parameter, then 
 the context can be used without having to retrofit it as a new parameter everywhere.
 
-### Partitioned Utility Classes
+### Partitioned `S3AUtils` Utility methods
 
-Splitting up S3A Utils should reduce the false positive merge problems, and provide a better conceptual model to work with and maintain.
+Splitting up `org.apache.hadoop.fs.s3a.S3AUtils` will reduce the merge problems,
+and provide a better conceptual model to work with and maintain.
 
-#### `org.apache.hadoop.fs.s3a.impl.StoreFailures`
+#### `org.apache.hadoop.fs.s3a.impl.AwsIntegration`
 
 Static operations to help us integrate with the AWS SDK, e.g. type mapping,
 taking a `MultiObjectDeleteException` and converting to a list of Paths.
@@ -321,13 +327,20 @@ Some of the error logic in `S3AUtils.translateException()` should really be move
 an independent class, but as that is a common maintenance point, it needs to stay
 where is —more specifically, the existing code does. New code does not.
 
+
 #### `org.apache.hadoop.fs.s3a.impl.StoreConfiguration`
 
-All the code from `S3AUtils` to deal with configuration.
+All the code from `S3AUtils` to deal with configuration. Initially: new methods.
 
 #### `org.apache.hadoop.fs.s3a.impl.StoreOperations`
 
 All the java-8 lambda level support which isn't added to hadoop-common for broader use.
+
+#### `org.apache.hadoop.fs.s3a.auth.AuthenticationBinding`
+
+Where we add (ultimately move) methods related to setting up AWS authentication.
+Placed in the `org.apache.hadoop.fs.s3a.auth` package to be adjacent to the
+classes it uses. 
 
 ## Testing 
 
@@ -342,9 +355,10 @@ All the java-8 lambda level support which isn't added to hadoop-common for broad
 * Options for testing encryption, roles, etc.
 * IO tests on the landsat CSVs for fast setup and no local billing.
 * Automated generation of unique test paths from method names.
-* `ContractTestUtils` 
+* `ContractTestUtils`, mostly.
 * Use of metrics to internally test behaviours of system, e.g. number of HEAD and DELETE calls made when creating files and directories.
-* `LambdaTestUtils`, especially it's `intercept()` clone of ScalaTest
+* `LambdaTestUtils`, especially it's `intercept()` clone of ScalaTest.
+* Our initial adoption of AspectJ
 
 ### What doesn't
 
@@ -369,7 +383,7 @@ All the java-8 lambda level support which isn't added to hadoop-common for broad
 * Better split of Test/ITest for new tests.
 * Stop adding new helper methods to `S3ATestUtils`; instead partition by function `PublicDatasetTestUtils`, etc, all in `org.apache.hadoop.fs.s3a.test` package.
 * Ability to declare on maven command line where the `auth-keys.xml` file lives, so make it easier to run tests with a clean source tree.
-* Explore use of AssertJ and extend `ContractTestUtils` with new `assertThat` options for filesystems and paths, e.g.
+* Expand use of AssertJ and extend `ContractTestUtils` with new `assertThat` options for filesystems and paths, e.g.
 
         assertThat(filesystem, path).pathExists().isFile().hasLength(3)
 * See if we can use someone else's mock S3 library to simulate the back end. There are things like [S3 Mock](https://github.com/adobe/S3Mock), which simulate the entire REST API (good) but mean you rely on them implementing it consistently with your expectations, and you still have something you can't deploy in unit test runs.
@@ -381,7 +395,9 @@ the test matrix and guarantess that S3Guard test runs always test against the re
 And a process enchancement to consider:
 
 * People who spend most of their day on this codebase set up a private jenkins/yetus build in an isolated docker container to test their own PRs, for a workflow of: local test run + fuller test of the whole option matrix.
-* Provided the users set these containers up with transient restricted-role creds on a daily (or even per-run) basis, the ability actually run third party PRs without risk of key theft. (Note: if you run in EC2, hard/impossiblet to stop malicioius access of EC2 creds, so must deploy with restricted rights there too or not do external PR validation)/
+* Provided the users set these containers up with transient restricted-role creds on a daily (or even per-run) basis,
+  the ability actually run third party PRs without risk of key theft.
+  (Note: if you run in EC2, hard/impossible to stop malicious access of EC2 creds, so must deploy with restricted rights there too or not do external PR validation)/
 
 
 ## How to move to this?
@@ -412,34 +428,13 @@ goes in). We can be backwards-incompatible for the post 3.2 features
 Bug fixes of methods not moved into Core and Store shouldn't rush to move to the new structure,
 as those can run all the way back to branch-2; it'd be too traumatic to do that here.
 
-## Issues
-
-Can we really do a clean separation of `StoreContext` operations from the FileSystem model?
-The context which comes down is likely to take a `Path` reference at the very least; it's things like rename, mkdirs &c which we could try to keep away
-
-How do we do this in a backport-friendly way? 
-
-How do you do this gracefully and incrementally, yet still be confident
-the final architecture is going to work?
-
-1. Use this doc as model for writing new code and tests.
-1. A quick, aggressive refactoring as a PoC, without worrying about
-backporting problems, etc. This would be to say "it can be done". Assume 1+ days
-work in the IDE. For anything bigger, make a collaborative dev on a branch.
-This would purely be a "this is what we can do" prototype, with no plan to
-retain. However, future work can pick up the structure of it as appropriate.
-1. Create and evolve the `StoreContext` class, use as constructor PM for new modules in the .impl package
-1. Test runner changes to go in in invidual patches (i.e. not with any other code changes)
-
-
-
 ## Experience of HADOOP-15183 rename work
 
 HADOOP-15183 started some of this work with a `StoreContext`, instantiable via
 `S3AFileSystem.createStoreContext()`.
 
-At the time of writing, with all this new code, the length of the S3AFileSystem
-is now 4200 lines, so it hasn't got any shorter. But: The new incremental
+At the time of writing, with all this new code, the length of the `S3AFileSystem`
+is now over 4200 lines, so it hasn't got any shorter. But: The new incremental
 and parallelized rename code, along with handling of partial deletes was
 all a fair amount of work. Apart from the context setup and operation
 instantiation and invocation, this has all be done outside the core FS,
@@ -470,10 +465,10 @@ public class StoreContext {
 }
 ```
 
-Initially some lamba expressions were used for operations (e.g getBucketLocation()),
-but this didn't scale. Instead a ContextAccessors interfacve was written to
+Initially some lamba expressions were used for operations (e.g. `getBucketLocation()`),
+but this didn't scale. Instead a `ContextAccessors` interfacve was written to
 offer those functions which operations may need. There's a non-static
-implementation of this in S3AFileSystem, and another in the unit test
+implementation of this in `S3AFileSystem`, and another in the unit test
 `TestPartialDeleteFailures`
 
 
@@ -516,7 +511,8 @@ interface ContextAccessors {
   ```
 
 *Note*: all new new stuff is going into `org.apache.hadoop.fs.s3a.impl` to make
-clear it's not for public play.
+clear it's not for public play. With a java9 module-info files we could make this
+explicit. 
 
 
 ### `AbstractStoreOperation`
@@ -556,8 +552,8 @@ public abstract class AbstractStoreOperation {
 
 This was originally used for the rename trackers, but, at Gabor Bota's suggestion,
 most of the `S3AFileSystem.rename()` operation was pulled out into one too.
-Doing that added a need to call various operations in S3AFileSystem.
-Rather than give up and say "here's your S3AFS", a new interface purely for
+Doing that added a need to call various operations in `S3AFileSystem`.
+Rather than give up and say "here's your owner S3AFS", a new interface purely for
 those rename callbacks was added, with an implementation class in S3AFS
 
 ```java
@@ -636,7 +632,7 @@ default BulkOperationState initiateBulkWrite(
 }
 ```
 
-1. All mutating operations in the Metastore API were extended to take this
+All mutating operations in the Metastore API were extended to take this
 state. In the DynamoDB store, operations update this state as they write data,
 recording which ancestor entries have been written. This avoids duplication
 on single-file renames within a bulk rename, and single commits in a job commit.
@@ -750,6 +746,59 @@ code from the details of S3Guard, while giving us the ability to add these featu
 every single function, caller and test which needs it.
 
   
+## Issues
+
+### Will layering work?
+
+Can we really do a clean separation of Store-level operations from the FileSystem model?
+
+The context which comes down is likely to take a `Path` reference at the very least;
+it's things like rename, mkdirs etc which we could try to keep away.
+(Update: the experience on `rename()` in HADOOP-15183 implies we very much need "something" beneath
+the public FileSystem API yet which exports all the operations medium-life store
+operations need, and taking that ongoing context.
+
+### How do we do this in a backport-friendly way? 
+
+How do you do this gracefully and incrementally, yet still be confident
+the final architecture is going to work?
+
+1. Use this doc as model for writing new code and tests.
+1. A quick, aggressive refactoring as a PoC, without worrying about
+backporting problems, etc. This would be to say "it can be done". Assume 1+ days
+work in the IDE. For anything bigger, make a collaborative dev on a branch.
+This would purely be a "this is what we can do" prototype, with no plan to
+retain. However, future work can pick up the structure of it as appropriate.
+1. Create and evolve the `StoreContext` class, use as constructor parameter for new modules in the .impl package
+1. Test runner changes to go in in invidual patches (i.e. not with any other code changes)
+1. As for "the final architecture" -we get to evolve it.
+
+### How do you stop this becoming a vast over-the-top rework?
+
+This is always the risk.
+
+Splitting the `S3AFileSystem` up into two initial layers, with the underlying layer
+providing the functions invoked by the `S3AFileSystem` class, by `WriteOperationsHelper`
+and those needed by `RenameOperation` and any siblings added is the foundational step.
+
+That would define the model/view split with effectively four views
+
+* Hadoop `FileSystem` API. 
+* and the private `WriteOperationsHelper`
+*`RenameOperation.RenameOperationCallbacks` 
+* `org.apache.hadoop.fs.s3a.impl.ContextAccessors`  
+
+All of these MUST be able to interact with our store model.
+
+Partitioning `S3AFileSystem` is the big first step. 
+It's where an initial "this is what we should" do PoC could be written,
+which we'd then review and see if it looked viable.
+
+No other changes to functionality would be made other than passing an operation context
+with every operation. For that we could add it in the API, even if they were not
+initially being passed in. (or we just had some stub `createOperationContext()...`) call
+
+
 
 
 
