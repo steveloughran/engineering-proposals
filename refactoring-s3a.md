@@ -9,6 +9,7 @@
 | 2019-05-07 | 0.2 beta | updated from rename experience |
 | 2019-07-23 | 0.2.1 beta | Operation Context |
 | 2019-10-01 | 0.3.0 | Another revision |
+| 2019-10-24 | 0.3.1 | Async initialize |
  
 # Introduction
 
@@ -45,12 +46,65 @@ downgrade failures to a "return 0".
 
 ## Bits that don't work so well
 
-Our re-referencing other top-level operations (`getFileStatus()` &c) was convenient, and nominally reduces cost, but it means the "it's a filesystem" metaphor is sustained deeper into the code than it needs to be.
-And the cost of those little `getFileStatus()` calls (2x HEAD + 1x LIST) is steep.
+###  large monolithic classes.
+
+The classes are too big and complicated for people to safely contribute to.
+That is: you need a lot of understanding of what happens, which operations incur
+a cost of a S3 operation, what forms the public API vs private operations.
+
+Not as much parallelization on batch operations as is possible, especially for the
+slow-but-low-IO calls (COPY, LIST), S3Guard calls which may be throtted.
+
+### initialize()
+
+Initialization is fairly fragile.
+As the new extension classes (e.g. DelegationTokens) are passed in instances of S3AFileSystem during construction, they can call things before they are ready.
+It means reordering code there is dangerous.
+
+It is slow, because we are invoking  network operations. That is 
+
+1. for  complicated delegation token and  authentication token implementations
+-to connect to a remote credential service.
+
+1. To initialise s3guard and hence a DynamoDB connection.
+1. to probe for the store existing and failing "fast"
+
+1. optionally to remove  pending uploads
+(side issue: should  we cut that now  that S3 lifecycle operations  can do it?),
+
+
+This means at least one HTTPS connection set up and used; often two to S3 and DDB, and possibly more. These are all set up and invoked in sequence.
+
+This can actually cause problems in applications which are trying to instantiate the FS in multiple threads.
+
+The `FileSystem.get()` operation looks for an FS instance serving that URI;
+If there is none in the cache then it creates and initialises a new one.
+Then a check for a cached entry is repeated -the new instance is added if there is still no entry; else it is closed and discarded.
+
+`S3AFilesystem.initialize()` can take so long that many threads try to instantiate their own copy, all but one of which are then discarded.
+
+We have tried in the past to do and asynchronous start-up where we do our checks for the bucket existing, etc in a separate thread.
+This proved too complex to support because every method in the class which required a live connection would have to probe for and possibly block for the initialisation to have completed.
+
+With a multilayer structure, we could push the asynchronous start-up
+one layer down and gate those operations on the completed initialisation.
+
+We should also be able to parallelise part of this process -the dynamoDB
+and S3 bucket + purge operations in particular. As they may both depend
+on delegation tokens, that must come first.
+
+There is a price to this: failures are not reported until later, and we may have three separate failures to report. We should probably prioritise them in the order of: DT, s3guard, bucket.
+
+Similarly, we can parallelise shutdown.
+
+### cross-invocation
+
+Our re-referencing other top-level operations (`getFileStatus()` etc) was convenient, and nominally reduces cost, but it means the "it's a filesystem" metaphor is sustained deeper into the code than it needs to be.
+And the cost of those little `getFileStatus()` calls (2x `HEAD` + 1x `LIST`) is steep.
 Similarly, there are calls to `getObjectMetadata` &c which sneak in when you aren't paying attention. All too often the state of an object is lost and then
 queried again immediately after; a side effect of us calling into our own exported methods.
 
-Example: when we rename a directory we list the children, then copy(), which does its own HEAD on
+Example: when we rename a directory we list the children, then `copy()`, which does its own HEAD on
 each file. Better strategy: pass in the file status or core attributes (name, version, etag)
 and skip the calls.
 
@@ -62,19 +116,24 @@ Reviewing is getting harder. This increases the cost of getting changes in, main
 
 With reentrant calls, there's more duplication of parameter validation, path qualification etc.
 
-Initialization is fairly fragile.
-As the new extension classes (e.g. DelegationTokens) are passed in instances of S3AFileSystem during construction, they can call things before they are ready.
-It means reordering code there is dangerous.
+### parental references in extension classes
+
+We have added significant large modules in their own classes -S3 Select, S3Guard
+and S3A Delegation Tokens being key examples. They do both get handed it down a reference to the owner, so that they used its methods, and can actually talk
+to AWS services (S3, DDB and STS respectively).
+
+This makes it harder for us to isolate these extensions for maintenance and testing. As we cannot control which methods they invoke, it is hard to differentiate external APIs from internal ones. 
+
+
+
+
+### checks to enforce fileystem path restrictions
+
 
 Applications which know the state of the FS before they start don't need all the overhead of the checks for parent paths, deleting fake parent dirs, etc.
 We skip all that in the commit process, for example.
 
-The classes are too big and complicated for people to safely contribute to.
-That is: you need a lot of understanding of what happens, which operations incur
-a cost of a S3 operation, what forms the public API vs private operations.
-
-Not as much parallelization on batch operations as is possible, especially for the
-slow-but-low-IO calls (COPY, LIST), S3Guard calls which may be throtted.
+###  limited code sharing across object store clients
 
 The primary means of sharing code across the other stores has tended to be
 copy and paste. While yes, they are pretty different, there are some things
@@ -85,19 +144,27 @@ as ABFS and google GS do. We could do something like pull ABFS code up into comm
 tests there, wire it across the stores consistently, also with common stats about
 cache miss, evict etc.
 
+### lambdas and futures
+
 Java-8 lambda expressions and IOException-throwing operations. This is a fundamental
 flaw in the Java language -checked exceptions aren't sustainable. It makes
 lambda expressions significantly less usable than in Groovy and Scala, to name but two
 other JVM languages which don't have this issue.
 
+### testing
+
 Testing: we're only testing at the FS level, not so much lower down except indirectly.
 In particular, the way things are structured we're probably not exploring
 all failure modes.
 
+### @Retry tags
+
 Reviewing maintaining `@Retry `attributes is all manual, and doesn't seem to be consistent.
-For example the `org.apache.hadoop.fs.s3a.S3Guard.S3Guard` class isn't complete.
+For example the `o.a.h.fs.s3a.S3Guard.S3Guard` class isn't complete.
 As its unique to this module, bringing in new developers adds homework to them.
 
+
+### Utility classes and cherry-picking conflicts
 Too much stuff accruing in `S3AUtils` and `S3ATestUtils`. As this is where
 we place most of the static operations, they're both unstructured collections
 of unreleated operations. While this isn't iself an issue, the fact that
@@ -172,7 +239,7 @@ explicit callbacks, rather than a reference to the base class.
 
 ## Structure
 
-### Package: `org.apache.hadoop.fs.s3a.impl`
+### Package: `o.a.h.fs.s3a.impl`
 
 Place new stuff in here so that there's no ambiguity about what's for external consumption vs private.
 Leave existing stuff as is to avoid backport pain.
@@ -180,7 +247,7 @@ Leave existing stuff as is to avoid backport pain.
 This was already been added in HADOOP-15625; new classes should go there.
 If a java 9 module spec can be added we can completely isolate this from the outside. 
 
-### `org.apache.hadoop.fs.s3a.impl.StoreContext`
+### `o.a.h.fs.s3a.impl.StoreContext`
 
 Common variables which need be shared all down the stack.
 These are mainly the services used by extension points today, when handed a
@@ -230,7 +297,7 @@ completable futures to asynchronous work SHOULD be submitted through such an
 executor, so that a single operation (bulk deletes of 1000+ files on DDB, etc)
 do not starve all other threads trying to use the same S3A instance.
 
-### `org.apache.hadoop.fs.s3a.impl.S3Access`
+### `o.a.h.fs.s3a.impl.S3Access`
 
 `S3Access` talks directly to S3 -and is the only place where we do this.
 
@@ -251,7 +318,7 @@ know how best to use. Becaus this is intended to private, mmoving to an async
 API can be done internally.
 
 
-### `org.apache.hadoop.fs.s3a.impl.S3AStore` + `StoreImpl`
+### interface `S3AStore` and  `S3AStoreImpl` implementation
 
 This layer has a notion of a filesystem with directories and can assume: paths are qualified.
 
@@ -268,7 +335,7 @@ the specific fields are passed down as contructor parameters, `StoreContext` and
 method parameters, including an `OperationContext`. 
 
 
-### `org.apache.hadoop.fs.s3a.S3AFileSystem`
+### `o.a.h.fs.s3a.S3AFileSystem`
 
 The external view of the store: public APIs. The class which brings things together.
 
@@ -289,7 +356,7 @@ If present, operations can use these rather than issue new requests for the data
 
 
 
-### `S3AWriteOperationContext`:  new 
+### `S3AWriteOperationContext`:  new end-to-end contact
 
 `S3AWriteOperationContext extends S3AOpContext`: equivalent of the `S3AReadOpContext`;
 tracks a write across threads. 
@@ -307,7 +374,7 @@ across threads and avoid the current problem wherein reads and writes performed 
 other threads are not counted within the IO load of the base thread, so omitted
 from the MapReduce, Spark and Hive reports
 
-## `org.apache.hadoop.fs.s3a.WriteOperationHelper`
+## `o.a.h.fs.s3a.WriteOperationHelper`
 
 We create exactly one of these right now; `S3AFileSystem.getWriteOperationHelper()` serves it up.
 If we make it per-instance and add a `S3AWriteOperationContext` as a constructor parameter, then 
@@ -315,10 +382,10 @@ the context can be used without having to retrofit it as a new parameter everywh
 
 ### Partitioned `S3AUtils` Utility methods
 
-Splitting up `org.apache.hadoop.fs.s3a.S3AUtils` will reduce the merge problems,
+Splitting up `o.a.h.fs.s3a.S3AUtils` will reduce the merge problems,
 and provide a better conceptual model to work with and maintain.
 
-#### `org.apache.hadoop.fs.s3a.impl.AwsIntegration`
+#### `o.a.h.fs.s3a.impl.AwsIntegration`
 
 Static operations to help us integrate with the AWS SDK, e.g. type mapping,
 taking a `MultiObjectDeleteException` and converting to a list of Paths.
@@ -328,18 +395,18 @@ an independent class, but as that is a common maintenance point, it needs to sta
 where is —more specifically, the existing code does. New code does not.
 
 
-#### `org.apache.hadoop.fs.s3a.impl.StoreConfiguration`
+#### `o.a.h.fs.s3a.impl.StoreConfiguration`
 
 All the code from `S3AUtils` to deal with configuration. Initially: new methods.
 
-#### `org.apache.hadoop.fs.s3a.impl.StoreOperations`
+#### `o.a.h.fs.s3a.impl.StoreOperations`
 
 All the java-8 lambda level support which isn't added to hadoop-common for broader use.
 
-#### `org.apache.hadoop.fs.s3a.auth.AuthenticationBinding`
+#### `o.a.h.fs.s3a.auth.AuthenticationBinding`
 
 Where we add (ultimately move) methods related to setting up AWS authentication.
-Placed in the `org.apache.hadoop.fs.s3a.auth` package to be adjacent to the
+Placed in the `o.a.h.fs.s3a.auth` package to be adjacent to the
 classes it uses. 
 
 ## Testing 
@@ -369,7 +436,7 @@ classes it uses.
 * Getting `MiniMRCluster` to do real test run of delegation due to problems setting up Yarn in secure mode for DT collection; `AbstractDelegationIT` has to mix live code with mocking to validate behaviours.
 * Dangerously easy to create DDB tables which continue to run up bills.
 * Parameterized tests can create test paths with same name, so lead to some constistency issues.
-* Mix of Test and ITest in same directory, mostly `org.apache.hadoop.fs.s3a` makes that a big and messy dir
+* Mix of Test and ITest in same directory, mostly `o.a.h.fs.s3a` makes that a big and messy dir
 * `S3ATestUtils` is another false-merge-confict file making backporting and patch merging hard.
 * Lack of model/view separation makes it hard to test view without the real live model. Compare with ABFS whose store class is an interface implemented by the live and mock back ends.
 
@@ -381,7 +448,7 @@ classes it uses.
 * Support for on-demand DDB table creation and use of these in test runs.
 * Fix up test path generation to always include unique value, such as timestamp.
 * Better split of Test/ITest for new tests.
-* Stop adding new helper methods to `S3ATestUtils`; instead partition by function `PublicDatasetTestUtils`, etc, all in `org.apache.hadoop.fs.s3a.test` package.
+* Stop adding new helper methods to `S3ATestUtils`; instead partition by function `PublicDatasetTestUtils`, etc, all in `o.a.h.fs.s3a.test` package.
 * Ability to declare on maven command line where the `auth-keys.xml` file lives, so make it easier to run tests with a clean source tree.
 * Expand use of AssertJ and extend `ContractTestUtils` with new `assertThat` options for filesystems and paths, e.g.
 
@@ -510,7 +577,7 @@ interface ContextAccessors {
 }
   ```
 
-*Note*: all new new stuff is going into `org.apache.hadoop.fs.s3a.impl` to make
+*Note*: all new new stuff is going into `o.a.h.fs.s3a.impl` to make
 clear it's not for public play. With a java9 module-info files we could make this
 explicit. 
 
@@ -704,9 +771,9 @@ a direct `S3AFileSystem` reference.
 * `WriteOperationHelper`. This will implicitly switch those classes which
 use that as the low-level API for store operations to using the store context
 * `S3ABlockOutputStream` (which also takes a `WriteOperationHelper`)
-* `org.apache.hadoop.fs.s3a.Listing`
-* `org.apache.hadoop.fs.s3a.commit.MagicCommitIntegration`
-* `org.apache.hadoop.fs.s3a.S3ADataBlocks`
+* `o.a.h.fs.s3a.Listing`
+* `o.a.h.fs.s3a.commit.MagicCommitIntegration`
+* `o.a.h.fs.s3a.S3ADataBlocks`
 * `AbstractDTService` and `S3ADelegationTokens`. Issue: any implementation
 of `AbstractDTService` is going to break here, which means any S3A
 delegation token binding outside of the `hadoop-aws` module.
@@ -786,7 +853,7 @@ That would define the model/view split with effectively four views
 * Hadoop `FileSystem` API. 
 * and the private `WriteOperationsHelper`
 *`RenameOperation.RenameOperationCallbacks` 
-* `org.apache.hadoop.fs.s3a.impl.ContextAccessors`  
+* `o.a.h.fs.s3a.impl.ContextAccessors`  
 
 All of these MUST be able to interact with our store model.
 
