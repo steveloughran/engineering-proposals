@@ -10,10 +10,23 @@
 | 2019-07-23 | 0.2.1 beta | Operation Context |
 | 2019-10-01 | 0.3.0 | Another revision |
 | 2019-10-24 | 0.3.1 | Async initialize |
+| 2020-02-19 | 0.3.2 | request factory |
  
 # Introduction
 
-The `S3AFileSystem` is getting over complex and unmanageable. There: I said it. Bit by bit, patch by patch, its grown to a single 4000 line file with more methods than I want to look at, and becoming trouble to work with.
+The `S3AFileSystem` is getting over complex and unmanageable. 
+
+There: I said it. Bit by bit, patch by patch, it has grown to a single 4000 line file with more methods than I want to look at, and becoming trouble to work with.
+
+This is slows down all development, because the "blast radius" of a change is
+quite high - and it makes reviewing hard.
+
+This document reviews the current codebase from the perspective of somebody who has written a lot of the code and the tests. My authorship of much of the code inevitably easy is my maintenance of the module -I know my way around, how things get invoked, and many of the design decisions. As a result, there may be overoptimism in my praise of the current system.
+
+At the same time I get to the field support calls related to that code, and,
+because of my ongoing work, suffer more than most people from the flaws in the current structure of the code.
+
+
 
 ## Bits that work well
 
@@ -28,12 +41,14 @@ The `S3AFileSystem` is getting over complex and unmanageable. There: I said it. 
 
 * The `S3AReadOpContext` to cover the context of a read has been able to evolve well and adapt to supporting S3 Select input streams alongside the classic one.
 
-* `WriteOperationsHelper`. It's evolved, but has grown as the internal API for operations which write data into S3: the `S3ABlockOutputStream`, the committers, now the S3A Implementation of the Multipart Upload API.
+* `WriteOperationsHelper`. It has evolved, but has grown as the internal API for operations which write data into S3: the `S3ABlockOutputStream`, the committers, now the S3A Implementation of the Multipart Upload API.
     This shows the benefit of having a private API which works at the store level, yet is still wrapped by S3Guard, knows about encryption, what to do after you materialize a file,...
 
 * Collecting statistics for different streams, merging them into the central statistics;
-making visible through `InputStream.toString()` and using in tests to ensure the cost of operations
-doesn't increase.
+making visible through `InputStream.toString()` and using in tests to ensure the cost of operations doesn't increase.
+
+Those statistics are now being picked up by Impala to be used in their statistics and performance tuning.
+
 
 * The `DurationInfo` logging of the duration of potentially slow operations.
   Currently mostly for the new commit calls, but extensible with ease. (This is now in hadoop-common via HADOOP-16093)
@@ -55,22 +70,22 @@ a cost of a S3 operation, what forms the public API vs private operations.
 Not as much parallelization on batch operations as is possible, especially for the
 slow-but-low-IO calls (COPY, LIST), S3Guard calls which may be throtted.
 
-### initialize()
+### `initialize()`
 
 Initialization is fairly fragile.
-As the new extension classes (e.g. DelegationTokens) are passed in instances of S3AFileSystem during construction, they can call things before they are ready.
+
+As the new extension classes (e.g. Delegation Tokens) are passed in instances of S3AFileSystem during construction, they can call things before they are ready.
+
 It means reordering code there is dangerous.
 
-It is slow, because we are invoking  network operations. That is 
+It means it is slow and getting slower, because we are invoking  network operations. That is 
 
 1. for  complicated delegation token and  authentication token implementations
 -to connect to a remote credential service.
-
 1. To initialise s3guard and hence a DynamoDB connection.
 1. to probe for the store existing and failing "fast"
-
-1. optionally to remove  pending uploads
-(side issue: should  we cut that now  that S3 lifecycle operations  can do it?),
+1. optionally to remove pending uploads
+(side issue: should we cut that now that S3 lifecycle operations can do it?),
 
 
 This means at least one HTTPS connection set up and used; often two to S3 and DDB, and possibly more. These are all set up and invoked in sequence.
@@ -95,7 +110,8 @@ on delegation tokens, that must come first.
 
 There is a price to this: failures are not reported until later, and we may have three separate failures to report. We should probably prioritise them in the order of: DT, s3guard, bucket.
 
-Similarly, we can parallelise shutdown.
+Similarly, we can potentially parallelise shutdown, if there is cost there
+(Side issue: `FileSystem.closeAllForUGI()`) closes all FS instances sequentially. That could be pushed out to a thread pool too.
 
 ### cross-invocation
 
@@ -127,13 +143,19 @@ This makes it harder for us to isolate these extensions for maintenance and test
 
 
 
-### checks to enforce fileystem path restrictions
+### expensive checks to enforce fileystem path restrictions
 
 
 Applications which know the state of the FS before they start don't need all the overhead of the checks for parent paths, deleting fake parent dirs, etc.
 We skip all that in the commit process, for example.
 
-###  limited code sharing across object store clients
+We actually skip checking all the way up the parent path to make sure that no ancestor is file. Nobody has ever noticed this in production -presumably because no applications ever attempt to do this. We do checks during directory creation; for files the cost of such scans would be overwhelming -and we can get away without them.
+
+Which raises a question: what else can we get away with? 
+
+Maybe we should think about cacheing locally the path of the most recently created directory, so we can eliminate checks for that path when a programme is creating many files in the same directory.
+
+###  limited code sharing across object store client implementations
 
 The primary means of sharing code across the other stores has tended to be
 copy and paste. While yes, they are pretty different, there are some things
@@ -144,17 +166,17 @@ as ABFS and google GS do. We could do something like pull ABFS code up into comm
 tests there, wire it across the stores consistently, also with common stats about
 cache miss, evict etc.
 
-### lambdas and futures
+### lambdas and futures crippled by checked exceptions
 
-Java-8 lambda expressions and IOException-throwing operations. This is a fundamental
-flaw in the Java language -checked exceptions aren't sustainable. It makes
-lambda expressions significantly less usable than in Groovy and Scala, to name but two
-other JVM languages which don't have this issue.
+Java-8 lambda expressions and IOException-throwing operations. This is a fundamental flaw in the Java language -checked exceptions aren't sustainable. It makes lambda expressions significantly less usable than in Groovy and Scala, to name but two other JVM languages which don't have this issue.
+
+We are going to have to live with this. What we can do is develop the helper classes we need to make this easier.
 
 ### testing
 
-Testing: we're only testing at the FS level, not so much lower down except indirectly.
-In particular, the way things are structured we're probably not exploring
+Testing: we're only testing at the FS API level, not so much lower down except indirectly.
+
+The way things are structured this means that we're probably not exploring
 all failure modes.
 
 ### @Retry tags
@@ -164,7 +186,8 @@ For example the `o.a.h.fs.s3a.S3Guard.S3Guard` class isn't complete.
 As its unique to this module, bringing in new developers adds homework to them.
 
 
-### Utility classes and cherry-picking conflicts
+### Utility classes generates needless cherry-picking conflicts
+
 Too much stuff accruing in `S3AUtils` and `S3ATestUtils`. As this is where
 we place most of the static operations, they're both unstructured collections
 of unreleated operations. While this isn't iself an issue, the fact that
@@ -193,7 +216,8 @@ When you look at how those methods get used, they come into some explicit self c
 Most of these are different enough they could be split up into separate groups.
 However, it is probably too late to do that without making backporting a nightmare.
 *This does not mean we should make it worse*.
-At the very least, new utils can be partitioned into their own class by function.
+
+At the very least, new utils can be partitioned into their own class by purpose.
 
 
 # Proposed: Three layers: Two Model, one View, "Operations"
@@ -210,9 +234,9 @@ To avoid the under layers becoming single large classes on their own, break up t
 You've just lost that isolation and added more complexity.
 Maybe we can do more at the `S3AStore` level, where features are given a ref to the `StoreContext` so can interact directly with that, along with the metastore
 
-### "Operations"
+### "Operations": short to medium life actions performed by the FileSystem
 
-Some of the Emulations of filesystem operations are very complex, especially those
+Some of the emulations of filesystem operations are very complex, especially those
 working with directories including, inevitably, rename.
 
 These operations can be be pulled out into their own "Operations" classes,
@@ -349,17 +373,30 @@ Maybe: factor out `TraceContext` which only includes trace info (not invokers), 
 
 * add User-Agent field for per-request User-Agent settings, for tracing &c.
 
-* Include FileStatus of pre-operation source and dest as optional fields.
+* Include `FileStatus` of pre-operation source and dest as optional fields.
 If present, operations can use these rather than issue new requests for the data -and update as they do so.
 
-* Credentials if per-request credentails are to be used.
+* Credential chains if per-request credentials are to be used.
 
+* `BulkOperationState`  - See below.
 
 
 ### `S3AWriteOperationContext`:  new end-to-end contact
 
 `S3AWriteOperationContext extends S3AOpContext`: equivalent of the `S3AReadOpContext`;
 tracks a write across threads. 
+
+To contain the state needed through a write all the way to the finishedWrite() method which updates S3Guard
+
+This includes: mkdir, simple writes, multipart uploads and files instantiated when committing a job.
+
+as/when a copy operation is added, it will also need to use it
+
+Fields
+
+```java
+boolean isDirMarker;  // lets us know to mark as an authoritative empty dir
+```
 
 
 * Add `Configuration` map of options set in the `createFile()` builder;
@@ -444,6 +481,7 @@ classes it uses.
 ### Proposed
 
 * We identify public containers with large/deep directory trees and use them for scale input tests.
+Example: import the landsat tree.
 * Expansion of `InconsistentS3AClient` to simulate more failures.
 * Support for on-demand DDB table creation and use of these in test runs.
 * Fix up test path generation to always include unique value, such as timestamp.
@@ -725,6 +763,13 @@ As a result: there's a lot more state passing by way of new parameters.
 The `CommitContext` class actually simplified a bit of the S3A committer code
 though, so it is not all bad.
 
+## Experience of HADOOP-16430 `DeleteOperation`
+
+The work of the `RenameOperation` can be reused for delete.
+
+And the `RenameOperation` callbacks into S3AFS expanded to become `OperationCallbacks`
+to support both. This can grow in future. There's a risk of exposing too much,
+but as it is structured as an interface we may be able to test better.
 
 ## Troublespots
 
@@ -762,7 +807,7 @@ us up for future development.
 ## Next Steps
 
 
-### Role out `StoreContext`, especially in 3.3+ classes
+### Roll out `StoreContext`, especially in 3.3+ classes -*Done*
 
 The new `StoreContext` class should be usable as the binding argument for
 those subcomponents of the S3A connector which are currently passed
@@ -806,13 +851,24 @@ bulk operation state now; if their lifecycle is managed from within the `Abstrac
 this becomes less complex. We just need a setter for the state which has the precondition: if the new state is non-null, the
 current state MUST be null.
 
-Per-requset UA suffix, Auth and openTrace are all features some of us have been discussing informally.
+Per-request UA suffix, Auth and openTrace are all features some of us have been discussing informally.
 There's no implementation of these features, which can all be added in the future. What is key is that
 creating and passing round an `OperationContext` everywhere, rather than a `BulkOperationState`, isolates
 code from the details of S3Guard, while giving us the ability to add these features without adding yet another parameter across
 every single function, caller and test which needs it.
 
-  
+*Update*: This gets complicated fast.
+
+## `RequestFactory` class to isolate request construction.
+
+An initial PoC refactoring has shown that there is a modest amount of code in S3AFS class dedicated purely
+to building request structures to pass down to the AWS client SDK, along with similar operations (e.g. adding
+SSE-C encryption keys). These can all be pulled out to a self-containerd `RequestFactory` class.
+This is a low-trauma housekeeping change which can applied ahead of any other work.
+
+*there is no grand design which needs to be "got right" here, just a coalescing of related operations into their own
+isolated class, one with no dependencies on any other part of an S3A FS instance*t 
+
 ## Issues
 
 ### Will layering work?
@@ -864,6 +920,58 @@ which we'd then review and see if it looked viable.
 No other changes to functionality would be made other than passing an operation context
 with every operation. For that we could add it in the API, even if they were not
 initially being passed in. (or we just had some stub `createOperationContext()...`) call
+
+
+
+* implement the lowest layer in front of the AWSClient and access over passing that client around
+* add the WriteOpContext
+
+
+# Layering Design
+
+Split the S3A code into layers
+
+* S3ADelegationTokens to remain as is; interface to be an option in future
+* Add interfaces + impls for new classes
+* S3AStore + Impl
+* RawS3A + Impl
+* Statistics will be moved to interfaces in HADOOP-16830, 
+  _Add public IOStatistics API; S3A to collect and report across threads_
+
+S3AFS will create the others and start in order: DelegationTokens, RawS3A, S3AStore, Metastore -Asynchronously.
+
+This will involve wrapping all access of DTs, s3client, Metastore to block until that layer is complete, 
+or raise an exception if instantiation of it/predecessor failed.
+
+New layers will all be subclasses of Service, split into Interface and Impl, 
+so we can manage the init/start/stop lifecycle with existing code or one or two shared utility operations.
+
+New layers will be part of S3AContext, though the under layers will not get a context with the upper layers defined;
+this avoids upcalls. 
+
+* We may need extra callbacks, especially on RawS3A to call Metastore during failure handling*
+
+
+## Partition operations to avoid re-replicating the same layers
+
+Common Hadoop FS layer operations like open/openfiles and listfiles/liststatus/listLocatedStatus are very
+much the FS API, but are complex in their own right. There's often > 1 Hadoop FS entry point with slightly different parameters.
+
+Proposed: pull these out into their own classes, e.g 
+
+```
+OpenFileApiImpl
+ListApiImpl
+StatusProbesImpl (getFileStatus, isDirectory, isFile, exists)
+```
+
+these are isolated in that
+* every ApiImpl MUST NOT call peer-impl classes, but only down to the layers below.
+* they MAY call their own internal methods however they feel like
+* they MUST NOT persist internal state. These are just partitioning of operations, not stateful classes.
+* they must be re-entrant across threads
+* they MUST NOT need to be close()-d or have any managed lifecycle. They can be created on demand, reused, etc.
+
 
 
 
