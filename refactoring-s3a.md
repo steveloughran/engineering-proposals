@@ -124,11 +124,19 @@ Example: when we rename a directory we list the children, then `copy()`, which d
 each file. Better strategy: pass in the file status or core attributes (name, version, etag)
 and skip the calls.
 
-There's no explicit context to operations. There's some per-thread fields to count bytes read and written, but as they don't span threads, in a multi-threaded world, we can't collect the statistics on an operation, trace spans etc. This makes it near-impossible to collect adequate statistics on the cost of a query in any long-lived process (Spark, Hive LLAP….)
+There's no explicit context to operations.
+There's some per-thread fields to count bytes read and written, but as they don't span threads,
+in a multi-threaded world, we can't collect the statistics on an operation, trace spans etc.
+This makes it near-impossible to collect adequate statistics on the cost of a query in any long-lived process (Spark, Hive LLAP….)
 
 Backporting is getting harder, with a lot of the merge problems often being from incidental changes in the tail of the `S3AFileSystem` file, `S3AUtils`, etc.
+These are "False merge conflicts" in that there's no explicit conflict in the patches, just that because we usually append new methods/constants to the tail of files, they don't merge well.
 
-Reviewing is getting harder. This increases the cost of getting changes in, maintenance etc. This is more a consequence of the increasing functionality: S3Guard, delegation tokens, S3 Select...
+
+Reviewing is getting harder.
+This increases the cost of getting changes in, maintenance etc.
+This is a consequence of the increasing functionality: S3Guard, delegation tokens, S3 Select, -and the sublties of S3 interaction,
+which are incompletely understood by all, but slightly better understood by those how have fixed many bugs 
 
 With reentrant calls, there's more duplication of parameter validation, path qualification etc.
 
@@ -274,10 +282,13 @@ If a java 9 module spec can be added we can completely isolate this from the out
 ### `o.a.h.fs.s3a.impl.StoreContext`
 
 Common variables which need be shared all down the stack.
-These are mainly the services used by extension points today, when handed a
-FileSystem instance (as Delegation Token support does, ).
-Where the FS does need to be invoked, we use a `Function` type so that
-any implementation of the function can be invoked
+These are mainly the services used by extension points today, when handed an
+S3AFileSystem instance (as Delegation Token support does).
+
+To access S3A FS operations, an interface `ContextAccessors` will provide
+restricted access; this can be provided with fake implementations in tests.
+
+The context will include
 
 * The filesystem URI
 * The instance of `S3AInstrumentation` for instrumentation.
@@ -371,22 +382,32 @@ be fairly thin: it's the view, not not the model
 `S3AOpContext` tuned to remove the destination field, and only have notion of: primary and S3Guard invoker; (future) trace context, statistics.
 Maybe: factor out `TraceContext` which only includes trace info (not invokers), and is actually passed in to the Invoker operations for better tracing.
 
-* add User-Agent field for per-request User-Agent settings, for tracing &c.
+* add `User-Agent` field for per-request User-Agent settings, for tracing &c. (or even: a function to generate the UA for extra dynamicness)
 
 * Include `FileStatus` of pre-operation source and dest as optional fields.
 If present, operations can use these rather than issue new requests for the data -and update as they do so.
 
 * Credential chains if per-request credentials are to be used.
 
+* Optional Progressable for providing progress/liveness callbacks to during long operations.
+This is important if a worker task is performing any O(data) operations yet still need to heartbeat
+back to a manager process, especially during commit workflows. We can't retrofit this to
+the current Hadooop API, but new builder-based operations should be given one.
+
+* `Statistics`  of the thread initating the write; this will be shared
+across threads and avoid the current problem wherein reads and writes performed on
+other threads are not counted within the IO load of the base thread, so omitted
+from the MapReduce, Spark and Hive reports
+
 * `BulkOperationState`  - See below.
 
 
-### `S3AWriteOperationContext`:  new end-to-end contact
+### `S3AWriteOperationContext`:  new end-to-end context
 
 `S3AWriteOperationContext extends S3AOpContext`: equivalent of the `S3AReadOpContext`;
 tracks a write across threads. 
 
-To contain the state needed through a write all the way to the finishedWrite() method which updates S3Guard
+To contain the state needed through a write all the way to the `finishedWrite()` method which updates S3Guard
 
 This includes: mkdir, simple writes, multipart uploads and files instantiated when committing a job.
 
@@ -395,7 +416,8 @@ as/when a copy operation is added, it will also need to use it
 Fields
 
 ```java
-boolean isDirMarker;  // lets us know to mark as an authoritative empty dir
+/** Is this write creating a directory marker. */
+boolean isDirMarker;
 ```
 
 
@@ -406,10 +428,6 @@ boolean isDirMarker;  // lets us know to mark as an authoritative empty dir
 * Update it with statistics and results after the operation, e.g. metadata from the
 PUT/POST response, including versionID & etag.
 * Add a callback for invocation on finalized write + failure.
-* `StatisticsData` instance of the thread initating the write; this will be shared
-across threads and avoid the current problem wherein reads and writes performed on
-other threads are not counted within the IO load of the base thread, so omitted
-from the MapReduce, Spark and Hive reports
 
 ## `o.a.h.fs.s3a.WriteOperationHelper`
 
@@ -432,9 +450,11 @@ an independent class, but as that is a common maintenance point, it needs to sta
 where is —more specifically, the existing code does. New code does not.
 
 
-#### `o.a.h.fs.s3a.impl.StoreConfiguration`
+#### `o.a.h.fs.s3a.impl.StoreSetup`
 
-All the code from `S3AUtils` to deal with configuration. Initially: new methods.
+All the code from `S3AUtils` to deal with FS setup and configuration.
+Initially: new methods.
+
 
 #### `o.a.h.fs.s3a.impl.StoreOperations`
 
@@ -476,7 +496,7 @@ classes it uses.
 * Mix of Test and ITest in same directory, mostly `o.a.h.fs.s3a` makes that a big and messy dir
 * `S3ATestUtils` is another false-merge-confict file making backporting and patch merging hard.
 * Lack of model/view separation makes it hard to test view without the real live model. Compare with ABFS whose store class is an interface implemented by the live and mock back ends.
-
+* package-private use of S3AFileSystem methods makes test cases brittle to maintain -more of a surface area to change S3AFS
 
 ### Proposed
 
@@ -493,9 +513,9 @@ Example: import the landsat tree.
         assertThat(filesystem, path).pathExists().isFile().hasLength(3)
 * See if we can use someone else's mock S3 library to simulate the back end. There are things like [S3 Mock](https://github.com/adobe/S3Mock), which simulate the entire REST API (good) but mean you rely on them implementing it consistently with your expectations, and you still have something you can't deploy in unit test runs.
 * Otherwise: New `S3ClientImpl` which simulates base S3 API, so allow for may ITests to run locally as Tests with the right -D option on the CLI (or default if you don't have cluster bindings?). Becomes a bigger engineering/maintenance issue the more you do things like actually implement object storage or validate the requests.
-* Get rid of the local `LocalMetadataStore`. Some people use it for testing,
-but with on-demand DDB there's no real justification for this. Removal simplifies
-the test matrix and guarantess that S3Guard test runs always test against the real metastore.
+* Restric ITest use of methods in S3AFileSystem to only those exported from some `S3ATestOperations` interface.
+ This helps us manage the binding better.
+
 
 And a process enchancement to consider:
 
@@ -570,7 +590,7 @@ public class StoreContext {
 }
 ```
 
-Initially some lamba expressions were used for operations (e.g. `getBucketLocation()`),
+Initially some lamba expressions/Functions were used for operations (e.g. `getBucketLocation()`),
 but this didn't scale. Instead a `ContextAccessors` interfacve was written to
 offer those functions which operations may need. There's a non-static
 implementation of this in `S3AFileSystem`, and another in the unit test
@@ -702,7 +722,7 @@ public interface RenameOperationCallbacks {
 }
 ```
 
-It'd be an ugly mess if every factored out operation had a similar
+It'd be an ugly mess if every factored-out operation had a similar
 (interface, implementation) pair, but if you look at the operations,
 none of these are directly at the Hadoop FS API level, more one level down
 `copyFile()`, or at the S3 layer `removeKeys()`. Paths and keys get used
@@ -867,7 +887,7 @@ SSE-C encryption keys). These can all be pulled out to a self-containerd `Reques
 This is a low-trauma housekeeping change which can applied ahead of any other work.
 
 *there is no grand design which needs to be "got right" here, just a coalescing of related operations into their own
-isolated class, one with no dependencies on any other part of an S3A FS instance*t 
+isolated class, one with no dependencies on any other part of an S3A FS instance*
 
 ## Issues
 
@@ -957,7 +977,7 @@ this avoids upcalls.
 Common Hadoop FS layer operations like open/openfiles and listfiles/liststatus/listLocatedStatus are very
 much the FS API, but are complex in their own right. There's often > 1 Hadoop FS entry point with slightly different parameters.
 
-Proposed: pull these out into their own classes, e.g 
+Proposed: pull these out into their own classes, e.g
 
 ```
 OpenFileApiImpl
@@ -973,7 +993,15 @@ these are isolated in that
 * they MUST NOT need to be close()-d or have any managed lifecycle. They can be created on demand, reused, etc.
 
 
+As usual, the backwards compatibility problem holds us up here. The key argument against splitting this up is "these are unstable areas where we need to backport fixes".
 
+Maybe that is what we should use as our metrics for suitability of refactoring:
 
+1. New features: factor out cleanly from the start, with StoreContext, interface for callbacks etc.
+1. Enhancement of stable features: pull out if the effort is justified.
+1. Important code paths where changes or fixes will need to be backported: leave
+1. Fixes: leave.
+1. Stable features where there are minor "irritants", e.g. variable names, import ordering: leave.
+   +A bit more freedom here on test suites which are rarely changed by others.
 
-
+This makes for a fairly straightforward checklist for changes.
