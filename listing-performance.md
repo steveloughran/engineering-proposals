@@ -69,7 +69,9 @@ asynchronous listing that the operation failed.
 Some iterators may be `Closeable` for a faster/cleaner shutdown of background IO.
 Consider checking to see if they do, Closeable, cast and close, 
 e,g through `IOUtils.cleanupWithLogger(LOGGER, (Closeable) it);`.
-This hasn't been done: yet, but we may want to take advantage of this in future. 
+
+This isn't just for the object stores; once we hook java.nio.Files listing to listStatusIterator(), we will need to close
+`DirectoryStream` at the end to avoid leaking references.
 
 
 
