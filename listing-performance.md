@@ -101,7 +101,7 @@ Specifically:
 
 * The S3A listing operations will report on the number of http list/list-continuation requests made,
   and the mix/mean/max values.
-* The mapping/transforming wrapper iterators in `org.apache.hadoop.fs.functional` all
+* The mapping/transforming wrapper iterators in `org.apache.hadoop.util.functional` all
   implement `IOStatisticsSource` and will pass through the `getIOStatistics()` call.
   They will also forward `Closeable.close()`.
 
