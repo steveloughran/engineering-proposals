@@ -10,7 +10,9 @@
 | 2019-07-23 | 0.2.1 beta | Operation Context |
 | 2019-10-01 | 0.3.0 | Another revision |
 | 2019-10-24 | 0.3.1 | Async initialize |
-| 2020-02-19 | 0.3.2 | request factory |
+| 2020-02-19 | 0.3.2 | request factory (not yet merged in) |
+| 2020-09-30 | 0.4.0 | directory markers |
+
  
 # Introduction
 
@@ -791,6 +793,87 @@ And the `RenameOperation` callbacks into S3AFS expanded to become `OperationCall
 to support both. This can grow in future. There's a risk of exposing too much,
 but as it is structured as an interface we may be able to test better.
 
+## Experience of HADOOP-13230 Directory Marker Retention
+
+This is the first non- backwards compatible change we have ever deliberately
+done to the code. It is not yet time to review the repercussions of that, other
+than to note back porting is complicated.
+
+_Good_
+
+*   Having an isolated `RenameOperation` helped implementing one of the hardest bits
+    of the change -not copying directory markers other than leaf markers.
+
+*   Self contained tracker of those markers (`DirMarkerTracker`) for that change
+    could be reused for the `MarkerTool` CLI entry point.
+
+*   `s3guard bucket-info` command adding probes for marker support and state. By
+    adding a new `-markers` option, all releases without marker awareness implicitly
+    fail with a usage error.
+
+*   As does a new path capabilities probe. (cloudstore's CLI support for this probe
+    is handy ... should be made available in hadoop CLI)
+
+*   Isolating the marker policy into a class
+    `org.apache.hadoop.fs.s3a.impl.DirectoryPolicy` + lambda-expression callback
+    allows for easy unit testing, and with a subset backported, helps with backport.
+    This class also handles the `hasPathCapability(path, option)` probes, so keeps
+    some complexity out of `S3AFileSystem`.
+
+*   New declarative syntax for declaring the operation count of operations. Lambda
+    expression to execute, metrics to always/conditionally evaluate, and an
+    `OperationCost` class to contain cost of HEAD/LIST calls of an operation, with a
+    `+` operation to easily combine mutiple operations to build the aggregate cost.
+    Until now we'd been doing it with constants in the code, and that was
+    unsustainable.
+
+```java
+verifyMetrics(() ->
+        execRename(srcFilePath, destFilePath),
+    whenRaw(RENAME_SINGLE_FILE_DIFFERENT_DIR),
+    with(DIRECTORIES_CREATED, 0),
+    with(DIRECTORIES_DELETED, 0),
+    // keeping: only the core delete operation is issued.
+    withWhenKeeping(OBJECT_DELETE_REQUESTS, DELETE_OBJECT_REQUEST),
+    withWhenKeeping(FAKE_DIRECTORIES_DELETED, 0),
+    // deleting: delete any fake marker above the destination.
+    withWhenDeleting(OBJECT_DELETE_REQUESTS,
+        DELETE_OBJECT_REQUEST + DELETE_MARKER_REQUEST),
+    withWhenDeleting(FAKE_DIRECTORIES_DELETED,
+        directoriesInPath(destDir)));
+````
+
+This is a nice design and fits in well with my notion of using instrumentation
+as an observation point of distributed system testing.
+
+_Bad_
+
+*   Usual issues with long-lived branches: merge conflict, especially with ongoing
+    list performance enhancements. The new declarative language for operation costs
+    meant that the existing test suite (`ITestS3AFileOperationCost`) was almost
+    completely rewritten, with inevitable conflict issues.
+
+*   I inadventently added a requirement for the client to have
+    `s3:deleteObjectVersion` permission in some cases. This only surfaced in QE
+    testing of the next CDP release. Proposed: we explicitly define the minimum set
+    of permissions we need, and use them in our assumed role tests. This will find
+    changes immediately.
+
+*   S3Guard compatibility issues have surfaced after the PR was merged -
+    HADOOP-17244. I only discovered when doing other work on rename/2
+    (HADOOP-11452)...a different test (inadvertently) caught the situation. I'm not
+    going to backport the fixes there, so we cannot have older clients doing R/W IO
+    on buckets with dir markers. Shows: better test coverage always helps.
+
+
+_Ugly_
+
+We now have an even more complicated test matrix with S3Guard and Marker
+policies. There's nothing which can be done here except make sure we are doing
+that broad test matrix before changes and on regular "what have we broken?"
+runs. The more people running tests with different settings, the better.
+
+
 ## Troublespots
 
 * We now have more classes to worry about. If every FS-level action is its own
@@ -823,6 +906,9 @@ of context/state in the process.
 If this is restricted to the existing `S3AFileSystem` and `WriteOperationHelper`,
 without adding new features, we could have minimum-viable-refactoring lining
 us up for future development.
+
+
+
 
 ## Next Steps
 
