@@ -1,6 +1,6 @@
 # IOStatistics
 
-## Questions
+## Questions developers ask
 
 ### Hadoop connector dev
 
@@ -55,7 +55,7 @@ S3A committers collect FileSystem.Statistics, massively over-counts in spark
 
 
 
-# IHADOOP-16830. Add public IOStatistics API
+# HADOOP-16830. Add public IOStatistics API
 
 
 Interface for listing: counters, gauges, min/mean/max values of a single instance of an IO object
