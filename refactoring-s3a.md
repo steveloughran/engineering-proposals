@@ -12,6 +12,7 @@
 | 2019-10-24 | 0.3.1 | Async initialize |
 | 2020-02-19 | 0.3.2 | request factory (not yet merged in) |
 | 2020-09-30 | 0.4.0 | directory markers |
+| 2021-01-13 | 0.5.0 | Consistency; IOStatistics |
 
  
 # Introduction
@@ -907,9 +908,147 @@ If this is restricted to the existing `S3AFileSystem` and `WriteOperationHelper`
 without adding new features, we could have minimum-viable-refactoring lining
 us up for future development.
 
+## January 2021: Consistent S3
+
+S3 in now Consistent. This means that all of S3Guard is superflous.
+
+This is a significant change which simplifies the entire operation of the
+S3A connector. 
+As of now there is no need to turn S3Guard on.
+It means we can also close S3Guard-related JIRAs as WONTFIX.
+It means that at some point in the future we can even think about how
+to remove it.
+
+If we leave it there then it will slowly atrophy and stop working without
+anybody noticing. Explicitly removing it is a one-way operation but
+immediately simplifies the codebase and test policy.
+
+Independent of that -what does it mean for the refactoring?
+
+The proposed three layer model will need to be revisited. Could two-layergts work?
+
+There's no need to pass down special S3Guard references into
+  "lower-layer" code.
+The handling of multipart delete failures is a key example. Most of
+`org.apache.hadoop.fs.s3a.impl.MultiObjectDeleteSupport` is dedicated to
+working out which paths to remove from the S3Guard table and which not.
+
+The `BulkOperation` parameter is superflous wherever it is passed around.
+
+Of the `hadoop s3guard` tool, only the non-s3guard related operations
+(`markers`, `bucket-info` and `uploads`) are needed.
+
+## January 2021: IOStatistics
+
+The big IOStatistics Patch is in with:
+
+* A public API for asking for statistics
+* Support in S3A Filesystem, Streams, and the list RemoteIterators
+* The final builder API makes construction of counters and gauges straightforward  
+* The duration tracking class has been extended and integrated, making it
+  simple to track the duration of network operations.
+
+```java
+  IOStatisticsStore st = iostatisticsStore()
+      .withCounters(
+          COMMITTER_BYTES_COMMITTED.getSymbol(),
+          COMMITTER_BYTES_UPLOADED.getSymbol(),
+          COMMITTER_COMMITS_CREATED.getSymbol(),
+          COMMITTER_COMMITS_ABORTED.getSymbol(),
+          COMMITTER_COMMITS_COMPLETED.getSymbol(),
+          COMMITTER_COMMITS_FAILED.getSymbol(),
+          COMMITTER_COMMITS_REVERTED.getSymbol(),
+          COMMITTER_JOBS_FAILED.getSymbol(),
+          COMMITTER_JOBS_SUCCEEDED.getSymbol(),
+          COMMITTER_TASKS_FAILED.getSymbol(),
+          COMMITTER_TASKS_SUCCEEDED.getSymbol())
+      .withDurationTracking(
+          COMMITTER_COMMIT_JOB.getSymbol(),
+          COMMITTER_MATERIALIZE_FILE.getSymbol(),
+          COMMITTER_STAGE_FILE_UPLOAD.getSymbol())
+      .build();
+```
 
 
+The public API is split into the public interface and the private
+implementation, except for `IOStatisticSnapshot` which has to be
+part of the public API so it can be serialized.
 
+The S3A side is very big as it moved to a full interface/impl split
+for statistics collection. It collects a lot of information.
+
+ABFS is now adding its support too, leaving only the issue of application
+takeup.
+
+This took almost a year of work on and off, with one person doing almost all the work.
+Having a unified patch meant there was time to get that API coherent, but it
+made for a bigger patch.
+
+The lesson there is: a few people working together should be able to do this
+fast, as they'd be reviewing/merging each others' work. 
+
+*It would have been better off as medium-lived branch in
+ the ASF hadoop repo, merged in as a series of changes with incremental reviews
+ and which could be merged into hadoop trunk once happy.*
+
+For application takeup we need a thread-local `IOStatisticsContext`. This would
+exist for each hive/spark/whatever worker thread, but need passing in to
+executor threads performing work on their behalf. 
+
+### January 2021: Incremental Listing
+
+All the list operations are optimised for incremental listing of directories.
+They are now significantly worse when listing files or empty directories, but
+for directories with one or more files, we have reduced the number of S3 API
+calls by 3/4. With asynchronous fetching of the next page of results,
+Applications which is the incremental APIs to list directories/directory trees
+can compensate for list performance by doing anything they can per listing
+entry.
+
+Note: ABFS is starting to follow this same design.
+
+We need to move applications onto these APIs, in hadoop's own codebase, but
+especially in query planning in Hive and Spark.
+
+This also means we need incremental versions of FileSystem.globStatus and and
+LocatedStatusFetcher. The latter is now being used in Spark as it offers
+parallelised tree scans. The globStatus call is one of those popular methods
+where use of it is so widespread that there's a risk of any change proving
+pathologically bad in some scenarios. This is why I abandoned (HADOOP-13371)[https://issues.apache.org/jira/browse/HADOOP-13371]
+_S3A globber to use bulk listObject call over recursive directory scan_.
+
+
+#### Proposed: Public APIs for Tree Scanning
+
+* New glob/located status fetcher classes in hadoop-common (with backports
+  somewhere) for executing incremental, parallelised scans.
+* To take an interface for callbacks to the FS, for FileSystem, FileStatus and
+  any tests we want.
+* Use the incremental List calls to direct the worker threads and to feed data
+  into the result iterator
+* Incremental returning of results to caller through RemoteIterator
+* Instrumented for IOStats collection
+* multithreaded into a supplied or constructed executor
+* builder API.
+* Closeable; close() will stop the scan.
+
+A key aspect of the design would be that there would be a RemoteIterator of
+results which would be populated with new values as worker threads find them.
+With the workers doing incremental listings, results could feed back as soon as
+any thread had results. for any directory found, unless a deep treewalk was in
+progress, the dir would be queued for its own scan.
+
+If you look at the two scanners, they aren't significantly different. the
+globber is doing pattern expansion; LocatedStatusFetcher is already
+parallelised.
+
+Troublespots:
+
+* results will not arrive in filename order, but instead at random.
+* time for next/hasNext to block is indeterminate. It may be good to provide a
+  Progressable callback there which is regularly updated on 1+ worker thread.
+  Maybe: whenever a new dir scan kicks off.
+* Could we safely use deep tree walks? And if so: how best to do it?
 ## Next Steps
 
 
