@@ -1017,6 +1017,74 @@ where use of it is so widespread that there's a risk of any change proving
 pathologically bad in some scenarios. This is why I abandoned (HADOOP-13371)[https://issues.apache.org/jira/browse/HADOOP-13371]
 _S3A globber to use bulk listObject call over recursive directory scan_.
 
+### January 2021: HADOOP-17414: header processing.
+
+The fact that the S3A magic committers weren't providing incremental feedback of bytes
+processed was addressed by allowing the S3A magic committer to add the final length
+to a customer header on the PUT of the marker file; Spark has a matching PR
+to read it. To get the header over to spark, all HTTP headers were made
+accessible via the getXAttr() APIs.
+
+1. The absence of FS Spec tests for this surfaced; almost shipped a patch
+which didn't generate an empty set of attributes for a directory 1.
+1. All header processing, including that in a copy operation, was moved to a
+new class `HeaderProcessing extends AbstractStoreOperation`
+1. With `getObjectMetadata()` added to the StoreContext callbacks on the basis
+that it's use was so ubiquitous, and it was so low level it would be at the bottom
+of any layered design.
+
+Change #3 was a mistake which became apparent during the auditing work
+of HADOOP-15711. Yes, it's ubiquitous -but we still need to manage the
+set of operations exported to every extension point -especially now
+there is an audit span to be explicitly or implicitly propagated.
+The operation should go into a HeaderProcessingCallbacks interface/impl provided
+to HeaderProcessing.
+
+### March 2021. HADOOP-16721. subdirectory delte() and rename() race condition.
+
+So far (March 8, 2021) the sole regression caused by S3 consistency.
+
+If thread/process 1 deleted the subdir `dest/subdir1` one and there
+were no sibling subdirectories, then then the dir `dest` would not
+exist until `maybeCreateFakeParentDirectory()` had performed a
+`LIST` and, if needed, a `PUT` of a marker.
+This creates a window where thread/process 2, trying to rename `staging/subdir2`
+into `dest` could fail "parent does not exist".
+
+And guess what:
+1. Hive still thinks renaming directories from staging to the production dataset is a good idea.
+1. It can spawn many threads to do this parallel (maybe even to compensate for the slow rename())
+performance of S3.
+1. On a sufficiently overloaded system (lots of threads already doing the parallel filenames)
+the window of parent-dir-not-found can last long enough for things to fail.
+   
+Prior to S3 being consistent this wouldn't have been an issue
+* rename()'s need to list everything underneath the source dir wasn't safe to use with delayed list consistency
+* so S3Guard was effectively mandatory.
+
+The fix: go from verifying parent dir exists to simply making sure that it isn't a file
+is a weakening of the requirement "parent dir must exist" -but file:// already doesn't
+require that. S3A is still slightly weaker in that you can rename a few layers under
+a file, but then `create()` lets you do that already, and nobody has noticed in production.
+
+One thing whch surfaced during the fix is: the interface/implementation split
+isn't sufficient for testability here, as you the means by which an S3AFS instance
+creates the implementation classes to be pluggable. 
+
+That is: we can't inject long delays into the final stage of `DeleteOperation`
+because the `OperationCallbacks` implementation passed in is always an instance
+of `OperationCallbacksImpl()`. Luckily, we could subclass the S3AFS, make
+`maybeCreateFakeParentDirectory()` protected, then use a pair of semaphores to choreograph
+access. 
+
+Creation of the callback classes needs to via plugin points.
+Without going anywhere near _guice_ or similar, we can at least make every instantiation of a
+callback class an explicit method in S3AFS, so that subclasses for testing can return their own.
+
+This should be done first for the new work in the auditing patch.
+
+
+## Proposals
 
 #### Proposed: Public APIs for Tree Scanning
 
