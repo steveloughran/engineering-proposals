@@ -18,7 +18,7 @@ Core representation of block and any fetch in progress
 Includes stat collection on System.nanoTime() of operations, but in `java.util.DoubleSummaryStatistics` format, not iostats. we should be able to map them
 and so collect in job reports.
 
-`org.apache.hadoop.fs.common.BlockOperations.Kind` lists all operations which can be queued; there is also an End of each of these, which is placed on the queue when done. 
+`BlockOperations.Kind` lists all operations which can be queued; there is also an End of each of these, which is placed on the queue when done. 
 
 ##  CachingBlockManager 
 
