@@ -2,17 +2,17 @@
 
 ### Doc History: 
  
-| date | revision | contents |
-|------|----------|----------|
-| 2019-03-15 | 0.0 alpha | initial draft |
-| 2019-04-05 | 0.1 beta | published |
-| 2019-05-07 | 0.2 beta | updated from rename experience |
-| 2019-07-23 | 0.2.1 beta | Operation Context |
-| 2019-10-01 | 0.3.0 | Another revision |
-| 2019-10-24 | 0.3.1 | Async initialize |
-| 2020-02-19 | 0.3.2 | request factory (not yet merged in) |
-| 2020-09-30 | 0.4.0 | directory markers |
-| 2021-01-13 | 0.5.0 | Consistency; IOStatistics |
+| date       | revision   | contents                            |
+|------------|------------|-------------------------------------|
+| 2019-03-15 | 0.0 alpha  | initial draft                       |
+| 2019-04-05 | 0.1 beta   | published                           |
+| 2019-05-07 | 0.2 beta   | updated from rename experience      |
+| 2019-07-23 | 0.2.1 beta | Operation Context                   |
+| 2019-10-01 | 0.3.0      | Another revision                    |
+| 2019-10-24 | 0.3.1      | Async initialize                    |
+| 2020-02-19 | 0.3.2      | request factory (not yet merged in) |
+| 2020-09-30 | 0.4.0      | directory markers                   |
+| 2021-01-13 | 0.5.0      | Consistency; IOStatistics           |
 
  
 # Introduction
@@ -1270,7 +1270,7 @@ this avoids upcalls.
 Common Hadoop FS layer operations like open/openfiles and listfiles/liststatus/listLocatedStatus are very
 much the FS API, but are complex in their own right. There's often > 1 Hadoop FS entry point with slightly different parameters.
 
-Proposed: pull these out into their own classes, e.g
+Proposed: pull these out into their own classes, e.g.
 
 ```
 OpenFileApiImpl
