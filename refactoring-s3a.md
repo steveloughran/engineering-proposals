@@ -13,6 +13,7 @@
 | 2020-02-19 | 0.3.2      | request factory (not yet merged in) |
 | 2020-09-30 | 0.4.0      | directory markers                   |
 | 2021-01-13 | 0.5.0      | Consistency; IOStatistics           |
+| 2024-09-17 | 0.6.0      | V2 SDK and S3AStore                 |
 
  
 # Introduction
@@ -1182,6 +1183,12 @@ This is a low-trauma housekeeping change which can applied ahead of any other wo
 *there is no grand design which needs to be "got right" here, just a coalescing of related operations into their own
 isolated class, one with no dependencies on any other part of an S3A FS instance*
 
+### Done: [HADOOP-17511. Add an Audit plugin point for S3A auditing/context](https://issues.apache.org/jira/browse/HADOOP-17511)
+
+This was added so all requests could have audit headers attached.
+It somewhat assisted with migration to the v2 SDK, as the builder model
+only had to be used in one place.
+
 ## Issues
 
 ### Will layering work?
@@ -1298,3 +1305,35 @@ Maybe that is what we should use as our metrics for suitability of refactoring:
    +A bit more freedom here on test suites which are rarely changed by others.
 
 This makes for a fairly straightforward checklist for changes.
+
+## V2 SDK update and S3AInternals
+
+Part of the traumatic moved to the V2 SDK, including an isolation of the public methods exported by the S3AFilesystem to a new
+
+```java
+public interface S3AInternals {
+
+  S3Client getAmazonS3Client(String reason);
+
+  /**
+   * Get the store for low-level operations.
+   * @return the store the S3A FS is working through.
+   */
+  S3AStore getStore();
+
+  String getBucketLocation() throws IOException;
+
+  String getBucketLocation(String bucketName) throws IOException;
+  
+  HeadObjectResponse getObjectMetadata(Path path) throws IOException;
+  
+  AWSCredentialProviderList shareCredentials(String purpose);
+  
+  HeadBucketResponse getBucketMetadata() throws IOException;
+  
+  boolean isMultipartCopyEnabled();
+  
+  long abortMultipartUploads(Path path) throws IOException;
+
+}
+```
