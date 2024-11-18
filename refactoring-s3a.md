@@ -14,7 +14,7 @@
 | 2020-09-30 | 0.4.0      | directory markers                   |
 | 2021-01-13 | 0.5.0      | Consistency; IOStatistics           |
 | 2024-09-17 | 0.6.0      | V2 SDK and S3AStore                 |
-
+| 2024-11-18 | 0.7.0      | Ongoing improvements and issues     |
  
 # Introduction
 
@@ -72,7 +72,7 @@ That is: you need a lot of understanding of what happens, which operations incur
 a cost of a S3 operation, what forms the public API vs private operations.
 
 Not as much parallelization on batch operations as is possible, especially for the
-slow-but-low-IO calls (COPY, LIST), S3Guard calls which may be throtted.
+slow-but-low-IO calls (COPY, LIST), S3Guard calls which may be throttled.
 
 ### `initialize()`
 
@@ -155,7 +155,7 @@ This makes it harder for us to isolate these extensions for maintenance and test
 
 
 
-### expensive checks to enforce fileystem path restrictions
+### expensive checks to enforce filesystem path restrictions
 
 
 Applications which know the state of the FS before they start don't need all the overhead of the checks for parent paths, deleting fake parent dirs, etc.
@@ -202,7 +202,7 @@ As its unique to this module, bringing in new developers adds homework to them.
 
 Too much stuff accruing in `S3AUtils` and `S3ATestUtils`. As this is where
 we place most of the static operations, they're both unstructured collections
-of unreleated operations. While this isn't iself an issue, the fact that
+of unrelated operations. While this isn't itself an issue, the fact that
 most new features add new operations to the bottom of these files, 
 it is a permanent source of merge problems. 
 
@@ -234,7 +234,7 @@ At the very least, new utils can be partitioned into their own class by purpose.
 
 # Proposed: Three layers: Two Model, one View, "Operations"
 
-Move to a model/view world, but with two models: the hierarchial FS view presented by S3Guard + S3, and the lower S3 layer. 
+Move to a model/view world, but with two models: the hierarchical FS view presented by S3Guard + S3, and the lower S3 layer. 
 
 The FileSystem API is the view.
 
@@ -370,7 +370,7 @@ This layer has a notion of a filesystem with directories and can assume: paths a
 at this level.
 * If operations are invoked here which need access to specific files in `S3AFilesystem`,
 rather than pass in a reference to the owner,
-the specific fields are passed down as contructor parameters, `StoreContext` and, when appropriate,
+the specific fields are passed down as constructor parameters, `StoreContext` and, when appropriate,
 method parameters, including an `OperationContext`. 
 
 
@@ -559,7 +559,7 @@ as those can run all the way back to branch-2; it'd be too traumatic to do that 
 
 ## Experience of HADOOP-15183 rename work
 
-HADOOP-15183 started some of this work with a `StoreContext`, instantiable via
+HADOOP-15183 started some of this work with a `StoreContext`, instanstiatable via
 `S3AFileSystem.createStoreContext()`.
 
 At the time of writing, with all this new code, the length of the `S3AFileSystem`
@@ -855,7 +855,7 @@ _Bad_
     meant that the existing test suite (`ITestS3AFileOperationCost`) was almost
     completely rewritten, with inevitable conflict issues.
 
-*   I inadventently added a requirement for the client to have
+*   I inadvertently added a requirement for the client to have
     `s3:deleteObjectVersion` permission in some cases. This only surfaced in QE
     testing of the next CDP release. Proposed: we explicitly define the minimum set
     of permissions we need, and use them in our assumed role tests. This will find
@@ -888,13 +888,13 @@ refactored design is correctly layered is if all operations only
 call downwards to the levels below.
 
 * Wiring up new ongoing state, such as `BulkOperationState`, went through a
-lot of the code. This created merge conflict with onther ongoing work.
+lot of the code. This created merge conflict with other ongoing work.
 
 * None of this stuff is going to be easily backportable. From now on, the
 first step to backporting subsequent changes in the HADOOP-15183
 patch.
 
-A more radical restructing of the codebase is going be a full "bridge-burning"
+A more radical restructuring of the codebase is going be a full "bridge-burning"
 module rewrite. If we believe it is needed, then it has to be done.
 We just all need to be aware of the consequences. 
 
@@ -926,7 +926,7 @@ immediately simplifies the codebase and test policy.
 
 Independent of that -what does it mean for the refactoring?
 
-The proposed three layer model will need to be revisited. Could two-layergts work?
+The proposed three layer model will need to be revisited. Could two-layers work?
 
 There's no need to pass down special S3Guard references into
   "lower-layer" code.
@@ -1024,10 +1024,10 @@ The fact that the S3A magic committers weren't providing incremental feedback of
 processed was addressed by allowing the S3A magic committer to add the final length
 to a customer header on the PUT of the marker file; Spark has a matching PR
 to read it. To get the header over to spark, all HTTP headers were made
-accessible via the getXAttr() APIs.
+accessible via the `getXAttr()` APIs.
 
 1. The absence of FS Spec tests for this surfaced; almost shipped a patch
-which didn't generate an empty set of attributes for a directory 1.
+which didn't generate an empty set of attributes for a directory.
 1. All header processing, including that in a copy operation, was moved to a
 new class `HeaderProcessing extends AbstractStoreOperation`
 1. With `getObjectMetadata()` added to the StoreContext callbacks on the basis
@@ -1177,7 +1177,7 @@ every single function, caller and test which needs it.
 
 An initial PoC refactoring has shown that there is a modest amount of code in S3AFS class dedicated purely
 to building request structures to pass down to the AWS client SDK, along with similar operations (e.g. adding
-SSE-C encryption keys). These can all be pulled out to a self-containerd `RequestFactory` class.
+SSE-C encryption keys). These can all be pulled out to a self-contained `RequestFactory` class.
 This is a low-trauma housekeeping change which can applied ahead of any other work.
 
 *there is no grand design which needs to be "got right" here, just a coalescing of related operations into their own
@@ -1191,7 +1191,7 @@ only had to be used in one place.
 
 ## Issues
 
-### Will layering work?
+### will layering work?
 
 Can we really do a clean separation of Store-level operations from the FileSystem model?
 
@@ -1213,7 +1213,7 @@ work in the IDE. For anything bigger, make a collaborative dev on a branch.
 This would purely be a "this is what we can do" prototype, with no plan to
 retain. However, future work can pick up the structure of it as appropriate.
 1. Create and evolve the `StoreContext` class, use as constructor parameter for new modules in the .impl package
-1. Test runner changes to go in in invidual patches (i.e. not with any other code changes)
+1. Test runner changes to go in in individual patches (i.e. not with any other code changes)
 1. As for "the final architecture" -we get to evolve it.
 
 ### How do you stop this becoming a vast over-the-top rework?
@@ -1337,3 +1337,199 @@ public interface S3AInternals {
 
 }
 ```
+
+## Nov 2024
+
+###  HADOOP-18679 BulkDelete S3AStore & WrappedIO
+
+The BulkDelete API/Impl is significant what it delivered public facing and how it was implemented.
+
+Delivery
+
+- A new public hadoop common API directly exposing the S3 bulk delete operation without any attempt to impose posix semantics on it. The caller gets a page size and can then issue bulkdelete call with a file collection of size <= that page size. Behaviour when a directory is passed in undefined; failure semantics are undefined.
+
+There is no attempt to be clever in terms of multithreaded submission of pages, which would allow for an extended list of files to be passed in. If the caller wants that they get to implement it themselves. This makes for simpler FS code and it makes the behaviour completely transparent to the calling application.
+
+- An implementation with page size of one is built into the base FileSystem class, which means that every FS implements the API. This means callers do not need a probe whether or not the FS implements the interface -simply query the page size and submit collections of no more than that size.
+
+- a new `WrappedIO` class in hadoop  common whose goal is to provide reflection-friendly static methods to invoke the API, want  to do the page size and want
+to do the bulk delete.  We have to recognise that libraries and applications are  years behind in the hadoop FS they build against,  and rather than wait for
+them to upgrade, accept this and make reflection easy. It is notable that  both parquet and iceberg use a near identical `DynMethods` API for dynamic loading
+and invocation of  methods. Presumably this is another  of Ryan Blue's copy  and paste libraries -as it  gives a reusable binding implementation  use in both
+libraries.
+
+Since this initial work,  [HADOOP-19131](https://issues.apache.org/jira/browse/HADOOP-19131). _WrappedIO  to export  modern filesystem/statistics
+APIs in a reflection friendly form_ has expanded on this to export openFile, IOStatistics etc, and our own copy and paste of DynMethods through which the API is tested.
+
+Implementation-wise:
+
+A new interface `org.apache.hadoop.fs.s3a.S3AStore` with matching implementation which
+* Exports the bulk delete operation/page size probe
+* provides methods to acquire read and write capacity. This helps rate-limit bulk deletes.
+
+`S3AStore` is intended to be the layer below the the FS, with the ultimate goal:
+
+1. All operations which interact with S3A client will be through APIs offered by the store. This will make switching to the S3A async client as transparent as any adoption of AWS SDK changes are.
+2. The file system will interact with `S3AStore` for all operations against the store.
+3. All callback interfaces for operations such as ExecutingStoreOperation subclasses, write operations through WrappedOperationHelper, stream reads through `S3AInputStream` will operate directly against the store, rather than be implemented as inner classes of S3AFS. This will be the measure of "have we got the layering correct?
+4. We rate limit.
+
+Now we need to expand this with
+* `WrappedIO` to offer older libraries access to APIs of Hadoop 3.3.0 and later. [Nov 24: done]
+* All new/updated uses of S3Client to include pushing that use into new methods into S3AStore
+* Removal of all knowledge of/ interaction with S3AFS and whole Posix model from the operations. A key one here is to cut all attempt to delete directory makers.
+* `S3AContext` to only use the store.
+
+The metric of success is
+1. All those callback interfaces/classes are now independent of S3AFS and call only into S3AStore.
+2. No imports of S3AFS class anywhere except for the instrumentation class.
+3. Thread pools are pushed down into the store.
+
+If we do this properly, then we may actually need to worry about keeping some back reference to S3AFS in input and output streams, as we need to do an ABFS with "HADOOP-18781. ABFS backReference passed down to streams to avoid GC closing the FS.". We can but hope.
+
+We do this work and all the mocking classes will break because mocking is hopelessly brittle. This may be an opportunity to move to a stub implementation of S3AStore.
+
+Big issue: do we just do this as one major change or incrementally?
+
+* Big change: it's complicated and it means that all patches cannot be cherry-picked into branches which predict this.
+* Incrementally: it is simpler, but actually creates a chain of PRs which need to be be cherrypicked before follow-up work can be cherry picked. We have already encountered this with BulkDelete.
+
+I'm currently thinking of a few incremental changes, some preparation work, then a big refactoring PR. Except I'm probably the person to do that big refactoring -and my time is being fed away trying to deal with SDK problems.
+
+
+### AWS SDK v2 upgrade is  continuous source of pain and a time sink.
+
+I am not convinced that the V2 SDK is production-ready. We may be the first major user of the SDK to deliver it as a large application to many downstream users and therefore are the first people to discover problems.
+
+I believe that the SDK development process has multiple issues:
+1. Bug reports of fundamental issues in SDK not being addressed.
+1. Changes in the SDK changes our code and being treated with indifference by the authors of the change "your problem not mine". 
+1. Subtle changes in behaviours of the V1 and V2 SDK surfacing in production deployments.
+1. Their test coverage does not include enough failure scenarios -failures which do surface in production deployment of our platform. Really they _and us_ need specific endpoint "unreliable s3 endpoint" which triggers failures more often than normal.
+
+
+#### [HADOOP-19181](https://issues.apache.org/jira/browse/HADOOP-19181) _IAMCredentialsProvider throttling results in AWS auth failures_
+
+The SDK's `InstanceProfileCredentialsProvider`'s is unable to cope with 503 throttling. because it only refreshes the cached credentials one second before they expire -yet react to a 503 response by sleeping 10 seconds. This is trivially fixable by changing the refresh threshold.
+
+Our report of this to the AWS SDK issue tracker [5247](https://github.com/aws/aws-SDK-java-v2/issues/5247) has acknowledged but yet not fixed. It was originally marked as a P1 issued, but has now been downrated to p2. 
+ We could work around that one by implementing the cache and refresh ourselves. Except: why bother? This is something so critical it should be on the SDK team priority list to address. Instead, while many service-related features come out, fixes seem to get low priority.
+  I'm actually using this error as an experiment to see whether the public issue tracking gets any attention whatsoever and whether the SDK team GAF about the Hadoop S3A codebase. Their S3 clearly does, at least when it comes to new features. However we see evidence of a Conway's-law structure wherein "core" SDK features are handled by a different part of the organisation and they don't appear to care about reports of a product which may processes petabytes of data a day. 
+
+Within Cloudera, we are fortunate that we provide applications with credentials are different way, as part of our RBAC mechanism. If our customers were hitting it someone would've sat down to do the work -again at the expense of innovation.
+
+
+#### [HADOOP-19272](https://issues.apache.org/jira/browse/HADOOP-19272). S3A: AWS SDK 2.25.53 warnings logged about transfer manager not using CRT client.
+
+After the Upgrade to version 2.25.53 of the AWS SDK, /HADOOP-19195(https://issues.apache.org/jira/browse/HADOOP-19195), whenever we construct an instance of the SDK transfer manager, we now see the message
+
+> 5645:2024-09-13 16:29:17,375 [setup] WARN  s3.S3TransferManager (LoggerAdapter.java:warn(225)) - The provided S3AsyncClient is an instance of MultipartS3AsyncClient, and thus multipart download feature is not enabled. To benefit from all features, consider using S3AsyncClient.crtBuilder().build() instead.
+
+We don't use multipart download. We only use the transfermManager for high-performance operations during rename, and have long had minor limitations in our application because of it
+* Operations initiated by the transfer manager are unaudited so do not generate tracking entries in the S3 Server Logs.
+* We have to rely on the SDK's recovery logic, rather than our own S3ARetryPolicy. This is the sole reason we do not disable retreat within the SDK at all. (Though we fear if we did that they would be unwelcome surprises).
+
+1. This log message should have been delayed until the actual feature was used.
+2. It should have been printed on a new slf4 log which would've been trivial to disable. This exactly what we do with our new leak tracker, which has a dedicated log name, `org.apache.hadoop.fs.resource.leaks` to report on a problem which is only fixable by developers rather than end users.
+
+The new warning message from the SDK is completely useless to end users. It is telling the users that the developers are using a feature which can only be addressed by new code rather than the uses themselves. And as we are not even using that code it is useless to us too.
+
+It's not being fixed. Again: we're viewed as "wrong". Oh, and it shows a process failure in our "qualifying an SDK update". The documents say check everything for messages and yet still the error go through. The implication is not enough due diligence was applied.
+
+What to do now?
+1. We immediately reverted the upgrade from the in-progress release of Hadoop 3.4.1. This was the simplest change.
+2. For trunk/branch-3.2 we pulled some code from cloudstore where we explicitly tune log levels (`LogControllerFactory`), and use this in a new class `AwsSdkWorkarounds` to disable that login entirely. Why the new class name? Because we expect more over time. Note: we also added a test to disable the workaround and verify that the warning message is printed. If/when that message goes away the test will fail and we can reinstate the logging.
+3. I am not accepting any new upgrade to SDK until I have written a strict policy document qualifying SDK. Even after someone has manually gone through the entire qualification process, I'm going to repeat it. And I am going to take this opportunity to explain that whoever does the upgrade can and should perform many more test than the simple command line scripts, they should actually look at the entire log of those command line scripts, and I will expand the mandatory operation set to include a requirement for: 
+versioned buckets, KMS encryption client side and server side, and even examining the S3 server logs logged to a second bucket (which will be accessed via path access, unversioned and more), to verify the auditing has been applied.
+
+I'm just having to be more ruthless here, especially as my own time will be spent as well doing this rather than innovative work. This means I am going to be very reluctant to accept upgrades especially as a release approaches. I think four weeks before release must be the cut-off date.
+
+Ironically, the main people who are going to suffer are the AWS developers on the code, as it is they who wants their new features to be available. I expect that they will be the individuals leading the first phase of the qualification before or any of my colleagues before my review. The good news is that they will be in a position to escalate internally when there is a regression.
+
+Note: replacing the transfer manager has been discussed in the past. We know it has problems, but it has not been worth the effort. It is getting closer to that point. The question is: what will it take, given the time replace it would be 3-4 weeks.
+
+#### [HADOOP-19221](https://issues.apache.org/jira/browse/HADOOP-19221) S3A: Unable to recover from failure of multipart block upload attempt "Status Code: 400; Error Code: RequestTimeout"
+
+Fun one this. It only surfaces when the S3 load balancer the client is connected to fails *and* the operation is an upload of a block in a multipart upload. Because these are so reliable, the probability of this occurring during any of our test runs is approximately never.
+
+However, the scale of our user base is visible in that this did to surface multiple times in production deployments.
+
+The root cause is that the mark/reset upload recovery code in the v2 SDK has changed significantly compared to the V1 logic. Instead of performing a `mark()` call at the beginning of a write and calling `reset()` on a failure, it now only perform these calls over a short distance of input data, a distance of which a multi-megabyte file is very much beyond. Despite the fact that mark/reset in such a file is trivial as you can go back to anywhere in the file.
+
+Rather than just fail saying "we have failed to roll back", the upload logic in the SDK assumes that it has successfully rolled back, and repeats thed post request stating the content length of the original data source -yet the library only uploads the small amount of data that is rolled back to, then awaits for the 200 response. The active S3 Front end awaits the rest of the data before eventually giving up with the 400 response.
+
+We concluded there was no point waiting for the SDK to address this, and given it was critical we implemented to fix ourselves. This required a complete understanding of the V2 SDK's `software.amazon.awsSDK.http.ContentStreamProvider` model, and implementation of our own content providers for files, bytebuffers and bytearrays. That cost me approximately two weeks of doing innovative work.
+
+This work, which turned out to be quite major in the end, did at least provide some side benefits.
+
+* We now track 4xx/5xx raised within the SDK and report them to the S3A IOStatistics. That means failures retried and recovered from within the SDK code are now visible.
+* `S3ABlockOutputStream` is now better at handling failures and being aborted during an upload.
+* S3A block output stream is now prepared for conditional writes.
+
+It was still a major piece of work and highlights my belief that the V2 SDK is still stabilising -and furthermore that our project appears to be the one doing the discovery.
+
+I didn't bother raising an issue with the AWS SDK issue tracker on github.
+1. This was surfacing in production and we need to get a fix in urgently.
+2. Nobody was going to look at it were they? Something which only surfaces on a transient failure of an S3 load balancer is not going to get any attention in the time period we would need. Why bother?
+
+It was just surprising quite how much work was needed. I want to do interesting stuff there are a lot we can do in the stream for better performance, that conditional write stuff could let us do profound things, and I want to get our most recent work into the application libraries. I find my time is being wasted to track down and address issues within the AWS SDK.
+
+I think another aspect of the upgrade process for an SDK is "whoever wishes to upgrade the SDK must commit to addressing all problems which surface from the upgrade. This includes immediate problems and subsequent ones we identify". Yes, this is going to push more work onto the AWS team, but as well as letting me do the interesting stuff it may help put pressure on the SDK team to stop breaking things.
+
+This would require whoever submits an upgrade patch to include a declaration of compliance, just as we do for normal patches -only stricter and bigger, something like:
+
+Submitter must have the following buckets:
+* B1: s3 standard, SSE-KMS, versioned. Also has S3 server logging to B2
+* B2: s3 standard, configured with path style access. Before test run is completely deleted.
+* B3: s3 express, configured with using CSE-KMS
+* B4: s3 standard with an intercontinental link to the test system and access point access. (i.e. if you test in usw-2, this is is eu-w-1)
+* maybe: B5: third party store.
+
+Buckets 1, 2 and 4 set to abort all pending uploads after 24h, delete all files after 7d
+
+Before the test runs
+* All buckets are cleaned `bin/hadoop fs -rm $B1\*` + same for the others
+* A test run with the old SDK against $B1 is executed to make sure it is healthy, and to note the execution time.
+* storediag output of all stores are attached. for B1, diagnostics through an access point are also attached.
+
+Then we have a set of attestations
+[ ] I have run the S3 ITests against B1;  no failures were observed.
+[ ] I have used distcp to collect the audit logs from B2 -logs spanning the timespan of the tests. 
+[ ] I have run the Itests against B3; no failures were observed.
+[ ] I have run the Itests against B4; no failures were observed
+[ ] If available, I have run the Itests against B3; no failures were observed
+[ ] I have compared the logs of the before and after runs; no differences were observed. (maybe we should provide a log4j format which logs at info and doesn't include time and thread IDs?)
+[ ] I have run the CLI tests against all buckets, no failures or changes in logs were observed
+[ ] I have added one or more new CLI tests to run; they are included in this PR. (forces submitter to think of new tests rather than set as "complete")
+[ ] The formatted test results are attached as a single .tar file containing a subdir for each test bucket.
+
+Also, execution time of before/after runs should be listed to see if there is any slowdown vs the previous version.
+
+Then their commitments to followup on regressions.
+
+If there is a regression identified by anyone
+* I understand that the immediate action is a revert of the PR until addressed.
+* I will collaborate full-time with others to identify and replicate the problem.
+* If a fix is needed in our code, I will collaborate on fixing the issue and writing automated/manual tests, and running them
+* If the regression is in AWS code, I will write and file the AWS issue. Furthermore, if I'm an AWS engineer: file an internal one.
+* If a workaround is needed to fix the SDK problem, I will collaborate with others to design and implement the workaround.
+
+The key point here is to 
+1. Make clear that and that whoever providing the update owns a lot of the upgrade problem, rather than expect others to handle it.
+2. Highlight that regressions are blockers on upgrades.
+
+
+#### SDK summary
+
+
+Assuming that we are the first people to deploy applications with the V2 SDK the scale of terabytes to petabytes of data a day, I think we should be treated as a priority source of bug reports, "we are finding things before other people".
+
+What kind of treatment would be good there?
+
+1. Having our issues treated with priority. The open source project itself may not have an account team, but many of the downstream uses do. Maybe actually having an account team would be one of the solutions for this, some single "open source account team" to include us and other projects they consider core. AWS engineers are involved in many of these -but the escalation process seems to need reports from customers rather than internal or OSS developers.
+2. Including our code and those of the downstream libraries applications in the regression testing of the SDK. It should not be our homework to regression test the SDK against our code, given our code is all open source. Instead, their nightly builds should be running our test against the latest build and failures reported to whichever team appears responsible.
+
+If I sound pretty pissed off here it is because I am. All of 2023 was essentially one continuous form of suffering moving from the V1 to the V2 SDK. I had intended to focus on tangible work, specifically making the prefetching output stream production ready for all deployments. It has not yet happened. I had also hoped that 2024 would be better. It is, barely. Offloading a lot of the responsibilities to whoever submits an upgrade will save a lot of my time here. 
+
+
+
