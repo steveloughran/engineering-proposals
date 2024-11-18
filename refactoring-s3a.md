@@ -13,7 +13,7 @@
 | 2020-02-19 | 0.3.2      | request factory (not yet merged in) |
 | 2020-09-30 | 0.4.0      | directory markers                   |
 | 2021-01-13 | 0.5.0      | Consistency; IOStatistics           |
-| 2024-09-17 | 0.6.0      | V2 SDK and S3AStore                 |
+| 2024-09-17 | 0.6.0      | V2 SDK and S3AInternals             |
 | 2024-11-18 | 0.7.0      | Ongoing improvements and issues     |
  
 # Introduction
