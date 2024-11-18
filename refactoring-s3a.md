@@ -1338,7 +1338,7 @@ public interface S3AInternals {
 }
 ```
 
-## Nov 2024
+# Nov 2024
 
 ###  HADOOP-18679 BulkDelete S3AStore & WrappedIO
 
@@ -1347,7 +1347,6 @@ The BulkDelete API/Impl is significant what it delivered public facing and how i
 Delivery
 
 - A new public hadoop common API directly exposing the S3 bulk delete operation without any attempt to impose posix semantics on it. The caller gets a page size and can then issue bulkdelete call with a file collection of size <= that page size. Behaviour when a directory is passed in undefined; failure semantics are undefined.
-
 There is no attempt to be clever in terms of multithreaded submission of pages, which would allow for an extended list of files to be passed in. If the caller wants that they get to implement it themselves. This makes for simpler FS code and it makes the behaviour completely transparent to the calling application.
 
 - An implementation with page size of one is built into the base FileSystem class, which means that every FS implements the API. This means callers do not need a probe whether or not the FS implements the interface -simply query the page size and submit collections of no more than that size.
@@ -1397,7 +1396,7 @@ Big issue: do we just do this as one major change or incrementally?
 I'm currently thinking of a few incremental changes, some preparation work, then a big refactoring PR. Except I'm probably the person to do that big refactoring -and my time is being fed away trying to deal with SDK problems.
 
 
-### AWS SDK v2 upgrade is  continuous source of pain and a time sink.
+### AWS SDK v2 upgrade is a continuous source of pain and a time sink.
 
 I am not convinced that the V2 SDK is production-ready. We may be the first major user of the SDK to deliver it as a large application to many downstream users and therefore are the first people to discover problems.
 
@@ -1418,6 +1417,9 @@ Our report of this to the AWS SDK issue tracker [5247](https://github.com/aws/aw
 
 Within Cloudera, we are fortunate that we provide applications with credentials are different way, as part of our RBAC mechanism. If our customers were hitting it someone would've sat down to do the work -again at the expense of innovation.
 
+Other than idenfiying the issue (assume 1 day), we are not trying to fix it ourselves, so it is a low-cost issue.
+
+However,  [HADOOP-18945](https://issues.apache.org/jira/browse/HADOOP-18945) is related and that appears taken a week.
 
 #### [HADOOP-19272](https://issues.apache.org/jira/browse/HADOOP-19272). S3A: AWS SDK 2.25.53 warnings logged about transfer manager not using CRT client.
 
@@ -1438,7 +1440,7 @@ It's not being fixed. Again: we're viewed as "wrong". Oh, and it shows a process
 
 What to do now?
 1. We immediately reverted the upgrade from the in-progress release of Hadoop 3.4.1. This was the simplest change.
-2. For trunk/branch-3.2 we pulled some code from cloudstore where we explicitly tune log levels (`LogControllerFactory`), and use this in a new class `AwsSdkWorkarounds` to disable that login entirely. Why the new class name? Because we expect more over time. Note: we also added a test to disable the workaround and verify that the warning message is printed. If/when that message goes away the test will fail and we can reinstate the logging.
+2. For trunk/branch-3.4 we pulled some code from cloudstore where we explicitly tune log levels (`LogControllerFactory`), and use this in a new class `AwsSdkWorkarounds` to disable that login entirely. Why the new class name? Because we expect more over time. Note: we also added a test to disable the workaround and verify that the warning message is printed. If/when that message goes away the test will fail and we can reinstate the logging.
 3. I am not accepting any new upgrade to SDK until I have written a strict policy document qualifying SDK. Even after someone has manually gone through the entire qualification process, I'm going to repeat it. And I am going to take this opportunity to explain that whoever does the upgrade can and should perform many more test than the simple command line scripts, they should actually look at the entire log of those command line scripts, and I will expand the mandatory operation set to include a requirement for: 
 versioned buckets, KMS encryption client side and server side, and even examining the S3 server logs logged to a second bucket (which will be accessed via path access, unversioned and more), to verify the auditing has been applied.
 
@@ -1447,6 +1449,9 @@ I'm just having to be more ruthless here, especially as my own time will be spen
 Ironically, the main people who are going to suffer are the AWS developers on the code, as it is they who wants their new features to be available. I expect that they will be the individuals leading the first phase of the qualification before or any of my colleagues before my review. The good news is that they will be in a position to escalate internally when there is a regression.
 
 Note: replacing the transfer manager has been discussed in the past. We know it has problems, but it has not been worth the effort. It is getting closer to that point. The question is: what will it take, given the time replace it would be 3-4 weeks.
+
+
+Effort: 1 week.
 
 #### [HADOOP-19221](https://issues.apache.org/jira/browse/HADOOP-19221) S3A: Unable to recover from failure of multipart block upload attempt "Status Code: 400; Error Code: RequestTimeout"
 
@@ -1472,24 +1477,49 @@ I didn't bother raising an issue with the AWS SDK issue tracker on github.
 1. This was surfacing in production and we need to get a fix in urgently.
 2. Nobody was going to look at it were they? Something which only surfaces on a transient failure of an S3 load balancer is not going to get any attention in the time period we would need. Why bother?
 
-It was just surprising quite how much work was needed. I want to do interesting stuff there are a lot we can do in the stream for better performance, that conditional write stuff could let us do profound things, and I want to get our most recent work into the application libraries. I find my time is being wasted to track down and address issues within the AWS SDK.
+It was just surprising quite how much work was needed: for this one about five weeks.
 
-I think another aspect of the upgrade process for an SDK is "whoever wishes to upgrade the SDK must commit to addressing all problems which surface from the upgrade. This includes immediate problems and subsequent ones we identify". Yes, this is going to push more work onto the AWS team, but as well as letting me do the interesting stuff it may help put pressure on the SDK team to stop breaking things.
+I want to do interesting stuff there are a lot we can do in the stream for better performance, that conditional write stuff could let us do profound things, and I want to get our most recent work into the application libraries.
+I find my time is being wasted to track down and address issues within the AWS SDK.
+
+### How much time have I spent spent working round SDK issues?
+
+| Issue | weeks |
+|-------|-------|
+| [HADOOP-19272](https://issues.apache.org/jira/browse/HADOOP-19272) |1 |
+| [HADOOP-19181](https://issues.apache.org/jira/browse/HADOOP-19181)/[HADOOP-18945](https://issues.apache.org/jira/browse/HADOOP-18945) | 1 |
+| [HADOOP-19221](https://issues.apache.org/jira/browse/HADOOP-19221) | 5 |
+
+Overall then, approximately two months -a significant fraction of my development time of the year,
+I could be doing and work rather than workarounds.
+
+This is too much -and it highlights how the SDK is a continuing source of pain.
+It also highlights that there are opportunities for other people other than myself.
+
+How do I do that? I think I just got ruthless and saying I'm not going to review new fixtures until we have
+The SDK integration under control, I expect people contributing features to get their hands dirty in this too.
+
+
+
+##  Hardening the SDK update process for more coverage.
+
+I think another aspect of the upgrade process for an SDK is "whoever wishes to upgrade the SDK must commit to addressing all problems which surface from the upgrade.
+This includes immediate problems and subsequent ones we identify". Yes, this is going to push more work onto the AWS team, but as well as letting me do the interesting stuff it may help put pressure on the SDK team to stop breaking things.
 
 This would require whoever submits an upgrade patch to include a declaration of compliance, just as we do for normal patches -only stricter and bigger, something like:
 
 Submitter must have the following buckets:
-* B1: s3 standard, SSE-KMS, versioned. Also has S3 server logging to B2
-* B2: s3 standard, configured with path style access. Before test run is completely deleted.
-* B3: s3 express, configured with using CSE-KMS
-* B4: s3 standard with an intercontinental link to the test system and access point access. (i.e. if you test in usw-2, this is is eu-w-1)
+* B1: S3 standard, SSE-KMS, versioned. Also has S3 server logging to B2
+* B2: S3 standard, configured with path style access. Before test run is completely deleted.
+* B3: S3 express, configured with using CSE-KMS
+* B4: S3 standard with an intercontinental link to the test system and access point access. (i.e. if you test in usw-2, this is is eu-w-1)
 * maybe: B5: third party store.
 
 Buckets 1, 2 and 4 set to abort all pending uploads after 24h, delete all files after 7d
 
 Before the test runs
 * All buckets are cleaned `bin/hadoop fs -rm $B1\*` + same for the others
-* A test run with the old SDK against $B1 is executed to make sure it is healthy, and to note the execution time.
+* A test run with the old SDK against B1 is executed to make sure it is healthy, and to note the execution time.
 * storediag output of all stores are attached. for B1, diagnostics through an access point are also attached.
 
 Then we have a set of attestations
@@ -1518,11 +1548,17 @@ The key point here is to
 1. Make clear that and that whoever providing the update owns a lot of the upgrade problem, rather than expect others to handle it.
 2. Highlight that regressions are blockers on upgrades.
 
+This PR took a month of of full-time work.
+
+There are also some less significant issues which have still taken up time.
+HADOOP-18397 and keepalive being one.
+It's maybe a small piece of coat but a lot of time we spent dealing with log debugging before we got there.
+I'm not sure it is an SDK problem so much as potentially in httpclient. Either way, it took time to debug.
 
 #### SDK summary
 
-
 Assuming that we are the first people to deploy applications with the V2 SDK the scale of terabytes to petabytes of data a day, I think we should be treated as a priority source of bug reports, "we are finding things before other people".
+
 
 What kind of treatment would be good there?
 
@@ -1530,6 +1566,11 @@ What kind of treatment would be good there?
 2. Including our code and those of the downstream libraries applications in the regression testing of the SDK. It should not be our homework to regression test the SDK against our code, given our code is all open source. Instead, their nightly builds should be running our test against the latest build and failures reported to whichever team appears responsible.
 
 If I sound pretty pissed off here it is because I am. All of 2023 was essentially one continuous form of suffering moving from the V1 to the V2 SDK. I had intended to focus on tangible work, specifically making the prefetching output stream production ready for all deployments. It has not yet happened. I had also hoped that 2024 would be better. It is, barely. Offloading a lot of the responsibilities to whoever submits an upgrade will save a lot of my time here. 
+
+In 2024 I seem to have dedicated two months to SDK related problems.
+I think I should stop taking this part and leave it to others, focusing on stuff myself and reviewing.
+At the same time: I'm going to be ruthless about reviewing and expect people contributing to work on SDK related regressions rather than just new work.
+That is: anyone who works full-time on this base is going to have to help deal with this ongoing problem.
 
 
 
