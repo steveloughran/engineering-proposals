@@ -1482,6 +1482,15 @@ It was just surprising quite how much work was needed: for this one about five w
 I want to do interesting stuff there are a lot we can do in the stream for better performance, that conditional write stuff could let us do profound things, and I want to get our most recent work into the application libraries.
 I find my time is being wasted to track down and address issues within the AWS SDK.
 
+
+
+There are also some less significant issues which have still taken up time.
+HADOOP-18397 and expect-continue being one.
+It's maybe a small piece of coat but a lot of time we spent dealing with log debugging before we got there.
+And of course I have to backport
+I'm not sure it is an SDK problem so much as potentially something in Apache httpclient. Either way, it took time to debug.
+
+
 ### How much time have I spent spent working round SDK issues?
 
 | Issue | weeks |
@@ -1489,6 +1498,7 @@ I find my time is being wasted to track down and address issues within the AWS S
 | [HADOOP-19272](https://issues.apache.org/jira/browse/HADOOP-19272) |1 |
 | [HADOOP-19181](https://issues.apache.org/jira/browse/HADOOP-19181)/[HADOOP-18945](https://issues.apache.org/jira/browse/HADOOP-18945) | 1 |
 | [HADOOP-19221](https://issues.apache.org/jira/browse/HADOOP-19221) | 5 |
+| [HADOOP-18397 ](https://issues.apache.org/jira/browse/HADOOP-18397 ) | 1 |
 
 Overall then, approximately two months -a significant fraction of my development time of the year,
 I could be doing and work rather than workarounds.
@@ -1496,12 +1506,11 @@ I could be doing and work rather than workarounds.
 This is too much -and it highlights how the SDK is a continuing source of pain.
 It also highlights that there are opportunities for other people other than myself.
 
-How do I do that? I think I just got ruthless and saying I'm not going to review new fixtures until we have
-The SDK integration under control, I expect people contributing features to get their hands dirty in this too.
+How do I do that? I think I just be ruthless and say I'm not going to review new features until we have
+The SDK integration under control. I can then require people contributing features to get their hands dirty in this too.
+This is partularly the case when the SDK update is needed for support of a new feature (Access Grants, Conditional Overwrite, Append)...
 
-
-
-##  Hardening the SDK update process for more coverage.
+##  Hardening the SDK update process.
 
 I think another aspect of the upgrade process for an SDK is "whoever wishes to upgrade the SDK must commit to addressing all problems which surface from the upgrade.
 This includes immediate problems and subsequent ones we identify". Yes, this is going to push more work onto the AWS team, but as well as letting me do the interesting stuff it may help put pressure on the SDK team to stop breaking things.
@@ -1513,59 +1522,74 @@ Submitter must have the following buckets:
 * B2: S3 standard, configured with path style access. Before test run is completely deleted.
 * B3: S3 express, configured with using CSE-KMS
 * B4: S3 standard with an intercontinental link to the test system and access point access. (i.e. if you test in usw-2, this is is eu-w-1)
-* maybe: B5: third party store.
+* maybe: B5: third-party store. (Harder; I can do this for one)
 
 Buckets 1, 2 and 4 set to abort all pending uploads after 24h, delete all files after 7d
 
 Before the test runs
+
 * All buckets are cleaned `bin/hadoop fs -rm $B1\*` + same for the others
 * A test run with the old SDK against B1 is executed to make sure it is healthy, and to note the execution time.
 * storediag output of all stores are attached. for B1, diagnostics through an access point are also attached.
 
 Then we have a set of attestations
-[ ] I have run the S3 ITests against B1;  no failures were observed.
-[ ] I have used distcp to collect the audit logs from B2 -logs spanning the timespan of the tests. 
-[ ] I have run the Itests against B3; no failures were observed.
-[ ] I have run the Itests against B4; no failures were observed
-[ ] If available, I have run the Itests against B3; no failures were observed
-[ ] I have compared the logs of the before and after runs; no differences were observed. (maybe we should provide a log4j format which logs at info and doesn't include time and thread IDs?)
-[ ] I have run the CLI tests against all buckets, no failures or changes in logs were observed
-[ ] I have added one or more new CLI tests to run; they are included in this PR. (forces submitter to think of new tests rather than set as "complete")
-[ ] The formatted test results are attached as a single .tar file containing a subdir for each test bucket.
+* I have run the S3 ITests against B1;  no failures were observed.
+* I have used distcp to collect the audit logs from B2 -logs spanning the timespan of the tests. 
+* I have run the Itests against B3; no failures were observed.
+* I have run the Itests against B4; no failures were observed
+* If available, I have run the Itests against B3; no failures were observed
+* I have compared the logs of the before and after runs; no differences were observed. (maybe we should provide a log4j format which logs at info and doesn't include time and thread IDs?)
+* I have run the CLI tests against all buckets, no failures or changes in logs were observed
+* I have added one or more new CLI tests to run; they are included in this PR. (forces submitter to think of new tests rather than set as "complete")
+* The formatted test results are attached as a single .tar file containing a subdir for each test bucket.
 
-Also, execution time of before/after runs should be listed to see if there is any slowdown vs the previous version.
+Then
 
-Then their commitments to followup on regressions.
+1. Measure the Execution time of before/after runs should be listed to see if there is any slowdown vs the previous version.
+A simple `time mvn verify -Dscale -Dparallel` of the aws dir after just having done a `mvn clean install` to take that out of the timing would be enough.
+This is to identify major changes. Ideally this should be done on an EC2 VM, so there are no network-related issues.
+
+2. Check out the relevant tag of the aws-sdk-v2 and use ripgrep to count the # of matches of the pattern `\.warn\(` in those modules we care about.
+For files where there's a change, open them, get the history, see what has changed.
+This not just to identify where are being told of in a way which makes for noisy clients,
+it is to see if there are potentially things we are getting wrong and which should fix.
+
+The PR submitter then has to make some commitments to followup on regressions.
 
 If there is a regression identified by anyone
 * I understand that the immediate action is a revert of the PR until addressed.
-* I will collaborate full-time with others to identify and replicate the problem.
-* If a fix is needed in our code, I will collaborate on fixing the issue and writing automated/manual tests, and running them
-* If the regression is in AWS code, I will write and file the AWS issue. Furthermore, if I'm an AWS engineer: file an internal one.
+* I will collaborate with others to identify and replicate the problem.
+* If a fix is needed in our code, I will collaborate on fixing the issue including writing automated/manual tests, and running them
+* If the regression is in AWS code, I will file the AWS issue. Furthermore, if I'm an AWS engineer: file an internal one.
 * If a workaround is needed to fix the SDK problem, I will collaborate with others to design and implement the workaround.
 
 The key point here is to 
 1. Make clear that and that whoever providing the update owns a lot of the upgrade problem, rather than expect others to handle it.
 2. Highlight that regressions are blockers on upgrades.
 
-This PR took a month of of full-time work.
-
-There are also some less significant issues which have still taken up time.
-HADOOP-18397 and keepalive being one.
-It's maybe a small piece of coat but a lot of time we spent dealing with log debugging before we got there.
-I'm not sure it is an SDK problem so much as potentially in httpclient. Either way, it took time to debug.
-
 #### SDK summary
 
-Assuming that we are the first people to deploy applications with the V2 SDK the scale of terabytes to petabytes of data a day, I think we should be treated as a priority source of bug reports, "we are finding things before other people".
+Assuming that we are the first people to deploy applications with the V2 SDK the scale of terabytes to petabytes of data a day, I think we should be treated as a priority source of bug reports: _we are finding things before other people encounter them_.
+Sometimes we do find them in production enviroments -but as they will be widely encountered in many other installations, and each of these may surface as an escalation through their customer account, early fixes matter.
+
 
 
 What kind of treatment would be good there?
 
-1. Having our issues treated with priority. The open source project itself may not have an account team, but many of the downstream uses do. Maybe actually having an account team would be one of the solutions for this, some single "open source account team" to include us and other projects they consider core. AWS engineers are involved in many of these -but the escalation process seems to need reports from customers rather than internal or OSS developers.
-2. Including our code and those of the downstream libraries applications in the regression testing of the SDK. It should not be our homework to regression test the SDK against our code, given our code is all open source. Instead, their nightly builds should be running our test against the latest build and failures reported to whichever team appears responsible.
+1. Having our issues treated with priority. The open source project itself may not have an account team, but many of the downstream users do. Maybe actually having an account team would be one of the solutions for this, some single "open source account team" to include us and other projects they consider core. AWS engineers are involved in many of these -but the escalation process seems to need reports from customers rather than internal or OSS developers.
+2. Including our code and those of the downstream libraries applications in the nightly regression testing of the SDK. It should not be our homework to regression test the SDK against our code, given our code is all open source.
+   Instead, their nightly builds should be running our test against the latest build and failures reported to whichever team appears responsible.
+   There are security risks, but running our trunk branch with session tokens restricted
+   to accessing the target bucket only and destroyed afterwards would mitigate this.
+   Or just build run the latest shipping release identified from its tag, but with
+   the updated sdk.
 
-If I sound pretty pissed off here it is because I am. All of 2023 was essentially one continuous form of suffering moving from the V1 to the V2 SDK. I had intended to focus on tangible work, specifically making the prefetching output stream production ready for all deployments. It has not yet happened. I had also hoped that 2024 would be better. It is, barely. Offloading a lot of the responsibilities to whoever submits an upgrade will save a lot of my time here. 
+If I sound pretty pissed off here it is because I am.
+All of 2023 was essentially one continuous form of suffering moving from the V1 to the V2 SDK.
+I had intended to focus on tangible work, specifically making the prefetching output stream production ready for all deployments.
+It has not yet happened.
+I had also hoped that 2024 would be better. It is, barely.
+Offloading a lot of the responsibilities to whoever submits an upgrade will save a lot of my time here. 
 
 In 2024 I seem to have dedicated two months to SDK related problems.
 I think I should stop taking this part and leave it to others, focusing on stuff myself and reviewing.
