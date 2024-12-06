@@ -1419,7 +1419,7 @@ Within Cloudera, we are fortunate that we provide applications with credentials 
 
 Other than idenfiying the issue (assume 1 day), we are not trying to fix it ourselves, so it is a low-cost issue.
 
-However,  [HADOOP-18945](https://issues.apache.org/jira/browse/HADOOP-18945) is related and that appears taken a week.
+However,  [HADOOP-18945](https://issues.apache.org/jira/browse/HADOOP-18945) is related and that appears to have taken a week.
 
 #### [HADOOP-19272](https://issues.apache.org/jira/browse/HADOOP-19272). S3A: AWS SDK 2.25.53 warnings logged about transfer manager not using CRT client.
 
@@ -1485,10 +1485,15 @@ I find my time is being wasted to track down and address issues within the AWS S
 
 
 There are also some less significant issues which have still taken up time.
-HADOOP-18397 and expect-continue being one.
-It's maybe a small piece of coat but a lot of time we spent dealing with log debugging before we got there.
-And of course I have to backport
-I'm not sure it is an SDK problem so much as potentially something in Apache httpclient. Either way, it took time to debug.
+HADOOP-19317 and expect-continue being one.
+It's maybe a small piece of code but a lot of time we spent dealing with log debugging before we got there -about 50 GB of logs had to examined by ripgrep
+
+I'm not sure it is an SDK problem so much as potentially something in Apache httpclient. Either way, it took days to debug. And again
+* Only surfaces overhaul connections with proxy in the way
+* Incredibly rare
+* Too up my time.
+
+At least this time the the fix was trivial -but I did have to backport it.
 
 
 ### How much time have I spent spent working round SDK issues?
@@ -1498,7 +1503,7 @@ I'm not sure it is an SDK problem so much as potentially something in Apache htt
 | [HADOOP-19272](https://issues.apache.org/jira/browse/HADOOP-19272) |1 |
 | [HADOOP-19181](https://issues.apache.org/jira/browse/HADOOP-19181)/[HADOOP-18945](https://issues.apache.org/jira/browse/HADOOP-18945) | 1 |
 | [HADOOP-19221](https://issues.apache.org/jira/browse/HADOOP-19221) | 5 |
-| [HADOOP-18397 ](https://issues.apache.org/jira/browse/HADOOP-18397 ) | 1 |
+| [HADOOP-19317](https://issues.apache.org/jira/browse/HADOOP-19317 ) | 1 |
 
 Overall then, approximately two months -a significant fraction of my development time of the year,
 I could be doing and work rather than workarounds.
@@ -1535,9 +1540,9 @@ Before the test runs
 Then we have a set of attestations
 * I have run the S3 ITests against B1;  no failures were observed.
 * I have used distcp to collect the audit logs from B2 -logs spanning the timespan of the tests. 
-* I have run the Itests against B3; no failures were observed.
-* I have run the Itests against B4; no failures were observed
-* If available, I have run the Itests against B3; no failures were observed
+* I have run the ITests against B3; no failures were observed.
+* I have run the ITests against B4; no failures were observed
+* If available, I have run the ITests against B3; no failures were observed
 * I have compared the logs of the before and after runs; no differences were observed. (maybe we should provide a log4j format which logs at info and doesn't include time and thread IDs?)
 * I have run the CLI tests against all buckets, no failures or changes in logs were observed
 * I have added one or more new CLI tests to run; they are included in this PR. (forces submitter to think of new tests rather than set as "complete")
@@ -1570,8 +1575,7 @@ The key point here is to
 #### SDK summary
 
 Assuming that we are the first people to deploy applications with the V2 SDK the scale of terabytes to petabytes of data a day, I think we should be treated as a priority source of bug reports: _we are finding things before other people encounter them_.
-Sometimes we do find them in production enviroments -but as they will be widely encountered in many other installations, and each of these may surface as an escalation through their customer account, early fixes matter.
-
+Sometimes we do find them in production environments -but as they will be widely encountered in many other installations, and each of these may surface as an escalation through their customer account, early fixes matter.
 
 
 What kind of treatment would be good there?
@@ -1582,19 +1586,36 @@ What kind of treatment would be good there?
    There are security risks, but running our trunk branch with session tokens restricted
    to accessing the target bucket only and destroyed afterwards would mitigate this.
    Or just build run the latest shipping release identified from its tag, but with
-   the updated sdk.
+   the updated SDK.
 
 If I sound pretty pissed off here it is because I am.
 All of 2023 was essentially one continuous form of suffering moving from the V1 to the V2 SDK.
-I had intended to focus on tangible work, specifically making the prefetching output stream production ready for all deployments.
-It has not yet happened.
+I had intended to focus on tangible work, specifically making the prefetching input stream production-ready deployments in long-lived services such as HBase and Spark. It has not yet happened.
+
 I had also hoped that 2024 would be better. It is, barely.
 Offloading a lot of the responsibilities to whoever submits an upgrade will save a lot of my time here. 
 
-In 2024 I seem to have dedicated two months to SDK related problems.
-I think I should stop taking this part and leave it to others, focusing on stuff myself and reviewing.
-At the same time: I'm going to be ruthless about reviewing and expect people contributing to work on SDK related regressions rather than just new work.
-That is: anyone who works full-time on this base is going to have to help deal with this ongoing problem.
+In 2024 I seem to have dedicated two+ months to SDK related problems. 
 
+## Work-related Resolutions for 2025
+
+### S3A
+
+I intend to stop fixing SDK problems and leave it to others, focusing on doing interesting stuff myself and reviewing.*
+
+At the same time: I'm going to be ruthless about reviewing and expect people contributing to work on SDK related regressions rather than just new work. That is: if you don't help fix the STK issues I am not going to review features.
+
+As a result, anyone who works full-time on this base is going to have to help deal with the SDK stability issue. Hopefully, by pushing more of the work to the AWS engineers working on this codebase we may start to see improvements in how the SDK themselves field reports -as in "care about the ones we submit". I also hope that the SDK team themselves actually starts to test over long-haul connections, possibly even with a third-party stores. 
+
+I'm going to start here with [HADOOP-19347](https://issues.apache.org/jira/browse/HADOOP-19347)
+_AWS SDK deleteObjects() and S3Store.deleteObjects() don't handle 500 failures of individual objects_. The SDK will retry on a 503, but a transient 500 service unavailable on a single object isn't. It must be incredibly rare as a full request failure is processed: front end server failures are handled. This one seems more that a single shard of S3 as briefly failed; most of the data is stored on separate chart so the problem didn't surface. 
+
+### Azure
+
+Focusing on Azure code (auditing, vector IO and more), isolates me from a lot of this pain: if I don't write the new code, I'm not the one who hits the new bugs from from it.
+
+### Parquet
+
+I've been enjoying getting some PRs into parquet, focusing on cloud performance right now. But I find the whole evolution of the format really interesting issue. If I get involved in that then SDK problems go away almost completely. I don't even have to worry about reviewing other people's S3 and Azure code unless I really have to.
 
 
