@@ -319,9 +319,17 @@ export B2AP=s3a://bucket-2-access-point
 ```
 
 
-## Preflight: before-you-upgrade
+## Preflight: Before You Upgrade
 
 ### Create a "notes" document to track your work, including timing information from test runs.
+
+### Seek help from others
+
+Getting others to help in the qualification process can help in multiple ways:
+1. Splits the work testing the upgrade, which can be done with different buckets.
+2. Different development setups helps identify different deployment issues, such
+   as in-AWS versus out-AWS clients, where bandwidth and latency are very different.
+
 
 ### JIRA 
 
@@ -391,8 +399,6 @@ If it does: file a bug report independent of the qualification
 JIRA, and crosslink with a "testing discovered" relation
 
 
-
-
 ### Create a full release for manual testing
 
 Create 
@@ -419,8 +425,7 @@ gh repo clone aws/aws-sdk-java-v2
 cd aws-sdk-java-v2
 ```
 
-This will add a new directory `~/External/aws-sdk-java-v2` with the repository
-
+This will add a new directory `~/External/aws-sdk-java-v2` with the repository.
 If you have already got this directory or an equivalent, update it.
 
 Look in the [tag list](https://github.com/aws/aws-sdk-java-v2/tags) for the tag of the release and check this out.
@@ -429,18 +434,20 @@ Look in the [tag list](https://github.com/aws/aws-sdk-java-v2/tags) for the tag 
 git checkout tag/2.30.27
 ```
 
-This is for 
+This is for identifying what has changed in this release, including what has changed near code which is now failing in tests,
+as well as how major changes are affecting classes we use.
+Creating a new project in your IDE can assist here.
 
-## Qualification Workflow
+## Qualification
 
-Allocate a whole week this, _including preparing your test buckets and other storage details_
+Allocate a whole week for this, _including preparing your test buckets and other storage details_
 
 This is not just for the overhead of the test setup, and execution, it assumes that there will be regressions and they will need fixing and retesting.
 
 
 ### Clean up all buckets.
 
-From your preflight release, clean out the buckets. n
+From your preflight release, clean out the buckets.
 ```sh
 bin/hadoop fs -rm $B1/\*
 bin/hadoop fs -rm $B2/\*
@@ -461,28 +468,48 @@ Update the value of `aws-java-sdk-v2.version` in `hadoop-project/pom.xml` to the
 ```
 In `LICENSE-binary` update the line declaring the version of the bundle.jar artifact included
 in distributions.
-
+For example:
 ```
 software.amazon.awssdk:bundle:2.30.27
 ```
+
+### Do a clean build and create the PR if all is good.
+
+If it compiles
+1. Commit the change, including the version number in the title
+1. Push to github
+1. Create a PR -don't include the version there yet.
+
+After this, leave yetus to do its work. 
+
+As you continue your work, place test results and stack traces into the PR, making it visible to all.
+Anyone who is collaborating should do the same.
 
 ### Do a clean build and test with your normal bucket
 
 In `hadoop-aws` directory
 1. Run `mvn verify`
 1. Run the `ILoadTest*` load tests from your IDE or via maven through
-      `mvn verify -Dtest=skip -Dit.test=ILoadTest\*`  ; look for regressions in performance
+      `mvn verify -Dtest=skip -Dit.test=ILoadTest\* -Dscale`  ; look for regressions in performance
       as much as failures.
 1. Create the site with `mvn site -DskipTests`; look in `target/site` for the report.
 1. Review *every single `-output.txt` file in `hadoop-tools/hadoop-aws/target/failsafe-reports`,
   paying particular attention to
   `org.apache.hadoop.fs.s3a.scale.ITestS3AInputStreamPerformance-output.txt`,
   as that is where changes in stream close/abort logic will surface.
-2. 
+
+
+
 ### Testing all the buckets.
  
 Run the `ITests` against the other buckets.
-This is the most time consuming parts of the process, ~20 minutes for each run and the setup time.
+This is the most time consuming parts of the process, ~20 minutes for each run and the setup time, assuming they actually work.
+
+What's the best order?
+* Start with your normal development bucket, as changes in behavior will be more obvious there.
+* Proceed to the third-party store, as that is the most likely to have problems.
+* Then the long-haul link
+* After that: whatever is most convenient.
 
 
 
@@ -494,7 +521,7 @@ which cause problems, especially whether new log messages have surfaced,
 or whether some packaging change breaks that CLI.
 
 It would be straightforward to automate a sequence of commands,
-but we do not want to because actually having you use the command line from a terminal window is part of the qualification process, as it can identify issues
+but we do not want to because actually having you use the command line from a terminal window is part of the qualification process, as it can identify issues.
 
 * Does it work?
 * Does it suddenly pause for long periods of time? 
@@ -512,7 +539,7 @@ This is often hard to test because S3 has such great reliability and because all
 In production enough requests are made to S3 through our code every day that many applications will actually encounter transient failures of the S3 end points, which need to be recovered from.
 And people running this code are often doing it remotely, often through proxy, and sometimes to other S3 endpoints
 
-It is always interesting when doing this to enable IOStatistics reporting
+It is always interesting when doing this to enable IOStatistics reporting:
 ```xml
 <property>
   <name>fs.iostatistics.logging.level</name>
@@ -532,7 +559,11 @@ export HADOOP_OPTIONAL_TOOLS="hadoop-aws"
 
 Now run some basic hadoop CLI operations.
 
+*note* these examples are from the previous qualifying section in testing.md; they have not been updated for the multi-bucket setup.
+Changing the environment variables should suffice.
+
 ```bash
+
 export BUCKETNAME=example-bucket-name
 export BUCKET=s3a://$BUCKETNAME
 
@@ -651,8 +682,7 @@ Then see if complete successfully in roughly the same time once the upgrade is a
 * Try different regions (especially a v4 only region), and encryption settings.
 * Any performance tests you have can identify slowdowns, which can be a sign
   of changed behavior in the SDK (especially on stream reads and writes).
-* If you can, try to test in an environment where a proxy is needed to talk
-to AWS services.
+* If you can, try to test in an environment where a proxy is needed to talk to AWS services.
 * Try and get other people, especially anyone with their own endpoints,
   apps or different deployment environments, to run their own tests.
 * Run the load tests, especially `ILoadTestS3ABulkDeleteThrottling`.
@@ -683,7 +713,7 @@ If the problem can be fixed or worked around in the Hadoop code, do it there too
 
 ### Dealing with Deprecated APIs and New Features
 
-A Jenkins run should tell you if there are new deprecations.
+A Yetus run should tell you if there are new deprecations.
 If so, you should think about how to deal with them.
 
 Moving to methods and APIs which weren't in the previous SDK release makes it
