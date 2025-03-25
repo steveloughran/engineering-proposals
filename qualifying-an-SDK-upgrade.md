@@ -105,7 +105,6 @@ Either way: we need that time to find things before shipping.
 
 Use an SDK which has been out for two or more weeks.
 
-
 * If we do need a specific release for a fix: go with that one or later.
 * If it is a feature we need, do always try for a slightly later build.
 
@@ -122,9 +121,15 @@ AWS engineers the solutions.
    search identifies them.
 
 ## Test Setup
+
 To be confident the upgraded SDK works in many deployment configurations, we
 need to validate it with as many of the different configuration options and
 store types we can.
+
+This is done through a combination of different S3 implementations,
+and by having a complex test matrix of different configurations
+for a small set of AWS S3 test buckets.
+
 ### Test Buckets
 
 
@@ -548,9 +553,9 @@ Getting others to help in the qualification process can help in multiple ways:
    as in-AWS versus out-AWS clients, where bandwidth and latency are very different.
 
 
-### JIRA 
+### Create two JIRAs 
 
-Create the JIRA.
+First, create the upgrade JIRA.
 
 Use the title "S3A: Upgrade AWS V2 SDK" ; once a specific version has
 been selected it must be renamed to that version.
@@ -558,7 +563,19 @@ been selected it must be renamed to that version.
 In the JIRA include references to any AWS issues you have identified which can
 require code changes.
 
-### Create the branch
+Then create a "Test failures while qualifying AWS SDK upgrade"
+
+This is where test failures can be listed,
+and against which a commit can be created fixing
+those which are minor ones due to failure to remove per-bucket settings
+(most common) or some other failure which is simply related to assertions
+which are only now surfacing.
+
+All stack traces MUST be attached as comments here.
+This may include real failures, which will need to be addressed
+separately, if more than single-line fixes of production code.
+
+### Create the PR branch
 
 1. Check out `trunk`
 2. Create a new branch for the update.
@@ -588,14 +605,13 @@ Executed in   17.37 mins    fish           external
    usr time   26.35 mins   91.00 micros   26.35 mins
    sys time    3.23 mins  854.00 micros    3.23 mins
 
-
 ```
 
 
 ### Do a full hadoop release build
 
 ```sh
-mvn package -Pdist -DskipTests -Dmaven.javadoc.skip=true -DskipShade
+mvn clean package -Pdist -DskipTests -Dmaven.javadoc.skip=true -DskipShade
 ```
 
 Move this to a path outside the hadoop source tree.
@@ -773,20 +789,51 @@ From the root of the project, create a command line release `mvn package -Pdist 
 ```bash
 export HADOOP_OPTIONAL_TOOLS="hadoop-aws"
 ```
+### Build cloudstore sdk2
+
+The cloudstore diagnostics and utilities tool is used in the CLI qualification.
+
+1. Check out https://github.com/steveloughran/cloudstore
+2. Build it with the -Psdk2 option and against the new sdk
+
+         mvn clean package -Psdk2 -Dhadoop.version=3.5.0-SNAPSHOT
+        
+3. set the `CLOUDSTORE` env var to point to the JAR created
+   `target/cloudstore-1.0.jar`
+
+# ---------------------------------------------------
+
 
 ### CLI commands
 
 Now run some basic hadoop CLI operations.
+The list here is derived from the list of [hadoop filesystem commands](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-common/FileSystemShell.html),
+with some extras from cloudstore.
 
-1. these examples are from the previous qualifying section in testing.md; they have not been updated for the multi-bucket setup.
-2. You do not need to run these commands against all buckets, but 
+Most are just file create/delete/upload/rename work, just to see if everything
+is good and scales well.
+Some are actually based on bugs seen in the wild, such as confusion about
+trailing / signs, 
+
+They MUST be run against all buckets, as different behaviors may surface.
+Running them against different stores will make you more alert to changes.
 Changing the environment variables should suffice.
-3. Consider any new logged message an error.
-   If it comes from a changed part of hadoop itself, track the cause down and file a related JIRA.
-   Those aren't blockers, but as not enough people run manual CLI commands before the release phase,
+
+Consider any new logged message an error.
+If it comes from a changed part of hadoop itself, other than hadoop-aws and hadoop-common
+track the cause down and file a related JIRA.
+Those aren't necessarily blockers, but as not enough people run manual CLI commands before the release phase
    you may be the the first person to notice it.
-   Example [HADOOP-19514. SecretManager logs at INFO in bin/hadoop calls](https://issues.apache.org/jira/browse/HADOOP-19514).
-4. 
+
+If it is from `hadoop-common` or `hadoop-aws` then it may be a regression in these
+libraries, or a sy
+
+Example [HADOOP-19514. SecretManager logs at INFO in bin/hadoop calls](https://issues.apache.org/jira/browse/HADOOP-19514).
+
+Many of these tests check for success/failure. 
+Checking for this status is easy when your shell prompt flags any non-zero result, such as through [fish prompt](https://fishshell.com/docs/current/prompt.html).
+Otherwise you need to `echo $?`(bash/zsh) or `echo $status` (fish) to see the outcome.
+
 ```bash
 
 export BUCKETNAME=example-bucket-name
@@ -796,13 +843,31 @@ export BUCKET=s3a://$BUCKETNAME
 # set -gx BUCKETNAME example-bucket-name
 # set -gx BUCKET s3a://$BUCKETNAME
 
+# verify this is a valid URL
 echo $BUCKET
 
 bin/hadoop s3guard bucket-info $BUCKET
 
+# should be empty; if there are some they are left over from test failures 
+# 
+# What the output looks like when where are leftovers:
+# 
+# Listing uploads under path ""
+# dir ABPnzm4LxSpC5K-A9MJ7ncqKyqEOnGbtDZ0enFNpeiUGcIR3B56s1wx00ZvUtCpSP9oajGBe
+# dir ABPnzm6zBHlLoohyBkVmHcqif6jY-ydTbdCG1bfreX57uF7exxwHINLFLF-WWHWfxhxIFHx1
+# Total 2 uploads found.
+
 bin/hadoop s3guard uploads $BUCKET
+
 # repeat twice, once with "no" and once with "yes" as responses
-bin/hadoop s3guarcd uploads -abort $BUCKET
+# if there were any uploads, they must be reported as deleted
+bin/hadoop s3guard uploads -abort $BUCKET
+
+# MUST be empty
+bin/hadoop s3guard uploads $BUCKET
+
+# cloudstore diagnostics and IO tests
+bin/hadoop jar $CLOUDSTORE storediag -w $BUCKET
 
 # ---------------------------------------------------
 # root filesystem operatios
@@ -810,8 +875,10 @@ bin/hadoop s3guarcd uploads -abort $BUCKET
 
 # 
 bin/hadoop fs -ls $BUCKET/
+
 # expect: No such file or directory
 bin/hadoop fs -ls $BUCKET/file
+
 
 # exit code of 0 even when path doesn't exist
 bin/hadoop fs -rm -R -f $BUCKET/dir-no-trailing
@@ -820,7 +887,9 @@ bin/hadoop fs -rm -R -f $BUCKET/dir-trailing/
 # expect "Is a directory"
 bin/hadoop fs -rm $BUCKET/
 
+# expect success
 bin/hadoop fs -touchz $BUCKET/file
+
 # error "Is a directory"
 bin/hadoop fs -touchz $BUCKET
 
@@ -841,7 +910,9 @@ bin/hadoop fs -touchz $BUCKET/file
 # expect the two directories and the file
 bin/hadoop fs -ls $BUCKET/
 
+# expect success
 bin/hadoop fs -mv $BUCKET/file $BUCKET/file2
+
 # expect "No such file or directory"
 bin/hadoop fs -stat $BUCKET/file
 
@@ -849,7 +920,7 @@ bin/hadoop fs -stat $BUCKET/file
 bin/hadoop fs -stat $BUCKET/file2
 
 # expect "file exists"
-bin/hadoop fs -mkdir $BUCKET/dir-no-trailing
+bin/hadoop fs -touchz $BUCKET/file2
 
 # expect success
 bin/hadoop fs -mv $BUCKET/file2 $BUCKET/dir-no-trailing
@@ -870,18 +941,19 @@ bin/hadoop fs -stat $BUCKET/dir-no-trailing
 bin/hadoop fs -stat $BUCKET/dir-no-trailing
 bin/hadoop fs -stat $BUCKET/dir-no-trailing
 
-# expect a "0" here:
-bin/hadoop fs -test -d  $BUCKET/dir-no-trailing ; echo $?
+# expect success
+bin/hadoop fs -test -d  $BUCKET/dir-no-trailing
 
-# expect a "1" here:
-bin/hadoop fs -test -d  $BUCKET/dir-no-trailing/file2 ; echo $?
+# expect failure
+bin/hadoop fs -test -d  $BUCKET/dir-no-trailing/file2
+
 # will return NONE unless bucket has checksums enabled. If it does, an etag is printed
 bin/hadoop fs -checksum $BUCKET/dir-no-trailing/file2
 
 # expect "etag" + a long string
 bin/hadoop fs -D fs.s3a.etag.checksum.enabled=true -checksum $BUCKET/dir-no-trailing/file2
 
-# epect NONE
+# expect NONE
 bin/hadoop fs -D fs.s3a.etag.checksum.enabled=false -checksum $BUCKET/dir-no-trailing/file2
 
 # expect success
@@ -892,6 +964,7 @@ bin/hadoop fs -expunge -immediate -fs $BUCKET
 # ---------------------------------------------------
 
 # failure unless delegation tokens are enabled
+# ERROR: Failed to fetch token from ...
 bin/hdfs fetchdt --webservice $BUCKET secrets.bin
 
 # success, even on third party stores
@@ -901,46 +974,98 @@ bin/hdfs fetchdt -D fs.s3a.delegation.token.binding=org.apache.hadoop.fs.s3a.aut
 # prints "Token (S3ATokenIdentifier{S3ADelegationToken/Full"...
 bin/hdfs fetchdt -print secrets.bin
 
-# expect success exit code
 # expect: WARN  token.Token (Token.java:getRenewer(478)) - No TokenRenewer defined for token kind S3ADelegationToken/Full
 bin/hdfs fetchdt -renew secrets.bin
 
-
 # ---------------------------------------------------
-# Copy to/from local
+# Copy to/from local of a 500+ MB file.
+# this is much larger than the usual hadoop-aws test file sizes 
 # if any time out it may be a sign of timeout settings too low,
 # which, if these are the default values, is a problem.
 # ---------------------------------------------------
 
-time bin/hadoop fs -Dfs.iostatistics.logging.level=info -copyFromLocal -t 10  share/hadoop/tools/lib/*bundle*jar $BUCKET/
+bin/hadoop fs -mkdir $BUCKET/uploads
+
+# expect successful upload
+time bin/hadoop fs -copyFromLocal -t 10  share/hadoop/tools/lib/*bundle*jar $BUCKET/uploads
+
 
 # expect bundle.jar to be listed
 # expect the iostatistics object_list_request value to be O(directories)
-bin/hadoop fs -Dfs.iostatistics.logging.level=info  -ls -R $BUCKET/
+bin/hadoop fs -ls -R $BUCKET/uploads
 
 # expect this size to be over 600 MB
 bin/hadoop fs -du -h -s $BUCKET/
 
-mkdir tmp
+# create/recreate a local dir
+rm -r downloads
+mkdir downloads
 
-time bin/hadoop fs -Dfs.iostatistics.logging.level=info -copyToLocal -t 10  $BUCKET/\*bundle\* tmp
+# download
+time bin/hadoop fs -Dfs.iostatistics.logging.level=info -copyToLocal -t 10  $BUCKET/uploads/\*bundle\* downloads
+
+# rename.
+# expect success, and on s3 standard, a slow O(data) operation.
+# on other stores, the speed may be much faster.
+time bin/hadoop fs -mv $BUCKET/uploads/ $BUCKET/renamed
+
+# verify the rename worked
+bin/hadoop fs -ls -R $BUCKET/renamed
 
 # ---------------------------------------------------
 # Cloudstore
-# check out and build https://github.com/steveloughran/cloudstore
-# then for these tests, set the CLOUDSTORE env var to point to the JAR created
-# cloudstore/target/cloudstore-1.0.jar
 # ---------------------------------------------------
 
-bin/hadoop jar $CLOUDSTORE storediag -w $BUCKET
+# bucket metadata; may return null values for third party stores
+bin/hadoop jar $CLOUDSTORE bucketmetadata $BUCKET
 
 # stresses upload speed, and that the pool and timeout settings work
 time bin/hadoop jar $CLOUDSTORE bandwidth 512M $BUCKET/testfile
+
+# bulk upload command, optimized for cloud storage.
+# Expect a fast parallelized upload of all the libraries; bundle.jar file is the slow one
+time bin/hadoop jar $CLOUDSTORE cloudup share/hadoop/tools/lib/ $BUCKET/cloudup
+
+# expect many files
+bin/hadoop fs -ls -R $BUCKET/cloudup
+
+# ---------------------------------------------------
+# Cloudstore Bulk delete uses the bulkdelete API;
+# the listing of files to delete must first be
+# generated.
+# ---------------------------------------------------
+
+# list the files
+bin/hadoop fs -ls -C $BUCKET/cloudup > downloads/listing.txt
+
+# verify it has the listing of paths only
+cat downloads/listing.txt
+
+# edit out any log messages which have crept in
+(left as an exercise for the reader)
+
+# then issue the bulk delete.
+# this will be faster on stores with bulk delete than those without. 
+
+bin/hadoop jar $CLOUDSTORE bulkdelete -verbose -page 5 $BUCKET/ downloads/listing.txt
+
 
 ```
 
 +Any other commands you can think of!
 
+### Don't forget to clean up!
+
+Clean up all objects, _and all pending uploads_.
+That really matters for stores which don't support lifecycle policies.
+
+```bash 
+
+bin/hadoop fs -rm -r $BUCKET/\*
+bin/hadoop s3guard uploads -list $BUCKET
+bin/hadoop s3guard uploads -abort -force $BUCKET
+rm -r downloads
+```
 
 ## More Testing
 
@@ -957,11 +1082,25 @@ Then see if complete successfully in roughly the same time once the upgrade is a
 * Run the load tests, especially `ILoadTestS3ABulkDeleteThrottling`.
 
 
+## Committing patches to the upgrade branch 
 
-## Committing the patch
+The SDK and license upgrade MUST be in an isolated commit in the upgrade branch.
 
-When the patch is committed: update the JIRA to the version number actually
-used; use that title in the commit message.
+The commit message MUST include the version number of the SDK used.
+
+Udate the JIRA title to the version number actually used.
+
+Other changes needed to fix test failures MUST go into a
+separate commit in the same branch.
+
+
+
+## Handling compile/test failures
+
+* this is still a bit messy with duplicate text*
+
+
+## What if there are failures?
 
 Be prepared to roll-back, re-iterate or code your way out of a regression.
 
@@ -974,13 +1113,27 @@ while that rollback option is there to be used, ideally try to work forwards.
 
 If the problem is with the SDK, file issues with the
  [AWS V2 SDK Bug tracker](https://github.com/aws/aws-sdk-java-v2/issues).
-If the problem can be fixed or worked around in the Hadoop code, do it there too.
+
+If it is some minor test code failure only now surfacing with a broader
+test of different endpoints, plan to fix it in the "test failures"
+JIRA if it is small enough.
+
+Test failures against third-party stores are a special case.
+If the test turns out to be using an AWS-only feature, then then
+test must be skippable, and test configurations for third-party stores
+declare this.
+
+If the failure is related to a new production-side feature (such as conditional overwrite)
+which is not available on all third party stores, then that feature must
+be something which can be disabled in production, the state exported
+as a path capability, and the tests written to automatically skip the
+test if the capability is not present.
+
+That change is not something which should be fixed in the upgrade branch. 
 
 
-## Handling compile/test failures
 
-
-### Dealing with Deprecated APIs and New Features
+### Deprecated APIs and New Features in the SDK
 
 A Yetus run should tell you if there are new deprecations.
 If so, you should think about how to deal with them.
@@ -1002,7 +1155,7 @@ must be done in its own patch, with its new tests which compare the old
 vs new operations.
 
 
-### What to do if there is a regression?
+### What to do if there is an SDK regression?
 
 Obviously, the PR canot be merged until resolved.
 The cause has to be identified, then fixed.
@@ -1147,10 +1300,6 @@ Sometimes we do find them in production environments -but as they will be widely
 
 # Appendices
 
-## Basic set of manual commands
-
-
-
 ## Fish functions for a happier maven
 
 Fish is [the command shell for the 1990s](https://fishshell.com/) and makes for a far better
@@ -1200,7 +1349,7 @@ or the whole build actually hanging.
 Do remember that these functions all set the `-T 1C` and, if builds
 show problems -stop using them.
 
-# Forcing TLS 1.3 on an access point
+## Forcing TLS 1.3 on an access point
 
 Mandating use of TLS 1.3 on an access point is a way to validate the s3a client access works with TLS1.3  without any behind-the-scenes downgrading.
 
@@ -1210,19 +1359,155 @@ Here is an example policy to restrict access, based on [an AWS blog post](https:
 {
     "Version": "2012-10-17",
     "Statement": [
-        {
-            "Effect": "Deny",
-            "Principal": "*",
-            "Action": "s3:*",
-            "Resource": "arn:aws:s3:us-east-2:123456789012:accesspoint/ap-awsexamplebucket/object/*",
-            "Condition": {
-                "NumericLessThan": {
-                    "s3:TlsVersion": [
-                        "1.3"
-                    ]
-                }
+    {
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": "arn:aws:s3:us-east-2:123456789012:accesspoint/ap-awsexamplebucket/object/*",
+        "Condition": {
+            "NumericLessThan": {
+                "s3:TlsVersion": [
+                    "1.3"
+                ]
             }
         }
+    }
     ]
 }
+```
+
+## Effective Logging
+
+Here is a log4j file which silences unrelated logs, prints output of different levels in different colors,
+and has commented out entries for low-level debugging.
+
+```properties
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# log4j configuration used during build and unit tests
+
+log4j.debug=false
+
+#log4j.rootLogger=info,stdout
+log4j.rootLogger=INFO,StdoutErrorFatal,StdoutWarn,StdoutInfo,StdoutDebug,StdoutTrace
+log4j.threshold=ALL
+
+log4j.appender.StdoutErrorFatal=org.apache.log4j.ConsoleAppender
+log4j.appender.StdoutErrorFatal.layout=org.apache.log4j.PatternLayout
+log4j.appender.StdoutErrorFatal.layout.conversionPattern=\u001b[31;1m%d{ISO8601} [%t] %-5p %c{2} (%F:%M(%L)) - %m%n
+log4j.appender.StdoutErrorFatal.threshold=ERROR
+log4j.appender.StdoutErrorFatal.Target=System.err
+
+log4j.appender.StdoutWarn=org.apache.log4j.ConsoleAppender
+log4j.appender.StdoutWarn.layout=org.apache.log4j.PatternLayout
+log4j.appender.StdoutWarn.layout.conversionPattern=\u001b[33;1m%d{ISO8601} [%t] %-5p %c{2} (%F:%M(%L)) - %m%n
+log4j.appender.StdoutWarn.threshold=WARN
+log4j.appender.StdoutWarn.filter.filter1=org.apache.log4j.varia.LevelRangeFilter
+log4j.appender.StdoutWarn.filter.filter1.levelMin=WARN
+log4j.appender.StdoutWarn.filter.filter1.levelMax=WARN
+log4j.appender.StdoutWarn.Target=System.err
+
+log4j.appender.StdoutInfo=org.apache.log4j.ConsoleAppender
+log4j.appender.StdoutInfo.layout=org.apache.log4j.PatternLayout
+log4j.appender.StdoutInfo.layout.conversionPattern=\u001b[0m%d{ISO8601} [%t] %-5p %c{2} (%F:%M(%L)) - %m%n
+log4j.appender.StdoutInfo.threshold=INFO
+log4j.appender.StdoutInfo.filter.filter1=org.apache.log4j.varia.LevelRangeFilter
+log4j.appender.StdoutInfo.filter.filter1.levelMin=INFO
+log4j.appender.StdoutInfo.filter.filter1.levelMax=INFO
+log4j.appender.StdoutInfo.Target=System.err
+
+log4j.appender.StdoutDebug=org.apache.log4j.ConsoleAppender
+log4j.appender.StdoutDebug.layout=org.apache.log4j.PatternLayout
+log4j.appender.StdoutDebug.layout.conversionPattern=\u001b[0;36m%d{ISO8601} [%t] %-5p %c{2} (%F:%M(%L)) - %m%n
+log4j.appender.StdoutDebug.threshold=DEBUG
+log4j.appender.StdoutDebug.filter.filter1=org.apache.log4j.varia.LevelRangeFilter
+log4j.appender.StdoutDebug.filter.filter1.levelMin=DEBUG
+log4j.appender.StdoutDebug.filter.filter1.levelMax=DEBUG
+log4j.appender.StdoutDebug.Target=System.err
+
+log4j.appender.StdoutTrace=org.apache.log4j.ConsoleAppender
+log4j.appender.StdoutTrace.layout=org.apache.log4j.PatternLayout
+log4j.appender.StdoutTrace.layout.conversionPattern=\u001b[0;30;1m%d{ISO8601} [%t] %-5p %c{2} (%F:%M(%L)) - %m%n
+log4j.appender.StdoutTrace.threshold=TRACE
+log4j.appender.StdoutTrace.filter.filter1=org.apache.log4j.varia.LevelRangeFilter
+log4j.appender.StdoutTrace.filter.filter1.levelMin=TRACE
+log4j.appender.StdoutTrace.filter.filter1.levelMax=TRACE
+log4j.appender.StdoutTrace.Target=System.err
+
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+log4j.appender.stdout.layout.ConversionPattern=%d{ISO8601} [%t] %-5p %c{2} (%F:%M(%L)) - %m%n
+
+
+# log hadoop at info
+log4j.logger.org.apache.hadoop=INFO
+
+# silence unrelated logs
+log4j.logger.org.apache.hadoop.http=WARN
+log4j.logger.org.apache.hadoop.ipc=WARN
+log4j.logger.org.apache.hadoop.ipc.Server=WARN
+log4j.logger.org.apache.hadoop.metrics2=ERROR
+log4j.logger.org.apache.hadoop.net.NetworkTopology=WARN
+log4j.logger.org.apache.hadoop.security.authentication.server.AuthenticationFilter=WARN
+log4j.logger.org.apache.hadoop.security.token.delegation=WARN
+log4j.logger.org.apache.hadoop.security.token.SecretManager=WARN
+log4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+log4j.logger.org.apache.hadoop.util.GSet=WARN
+log4j.logger.org.apache.hadoop.util.JvmPauseMonitor=WARN
+log4j.logger.org.apache.hadoop.util.HostsFileReader=WARN
+log4j.logger.org.apache.commons.beanutils=WARN
+
+# MiniDFS clusters can be noisy
+log4j.logger.org.apache.hadoop.hdfs.server=ERROR
+log4j.logger.org.apache.hadoop.hdfs.shortcircuit.DomainSocketFactory=ERROR
+log4j.logger.org.apache.hadoop.hdfs.StateChange=WARN
+log4j.logger.BlockStateChange=WARN
+log4j.logger.org.apache.hadoop.hdfs.DFSUtil=WARN
+
+## YARN can be noisy too
+log4j.logger.org.apache.hadoop.mapred.IndexCache=WARN
+log4j.logger.org.apache.hadoop.mapred.ShuffleHandler=WARN
+log4j.logger.org.apache.hadoop.yarn.event=WARN
+log4j.logger.org.apache.hadoop.yarn.server.nodemanager=WARN
+log4j.logger.org.apache.hadoop.yarn.server.nodemanager.containermanager.monitor=WARN
+log4j.logger.org.apache.hadoop.yarn.server.resourcemanager.scheduler=WARN
+log4j.logger.org.apache.hadoop.yarn.server.resourcemanager.security=WARN
+log4j.logger.org.apache.hadoop.yarn.util.ResourceCalculatorPlugin=ERROR
+log4j.logger.org.apache.hadoop.yarn.util.AbstractLivelinessMonitor=WARN
+log4j.logger.org.apache.hadoop.yarn.webapp.WebApps=WARN
+
+# log shell at debug for stack traces
+log4j.logger.org.apache.hadoop.fs.shell=DEBUG
+
+# for debugging low level S3a operations, uncomment this line
+#log4j.logger.org.apache.hadoop.fs.s3a=DEBUG
+
+
+# a bit too noisy when logging at debug
+log4j.logger.org.apache.hadoop.fs.s3a.S3AStorageStatistics=INFO
+
+
+# TLS info
+#log4j.logger.software.amazon.awssdk.thirdparty.org.apache.http.conn.ssl.SSLConnectionSocketFactory=DEBUG
+
+# Low-level trace of HTTP requests.
+# log4j.logger.software.amazon.awssdk.request=DEBUG
+# log4j.logger.software.amazon.awssdk.thirdparty.org.apache.http=DEBUG
+
 ```
