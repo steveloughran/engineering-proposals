@@ -207,7 +207,7 @@ Submitter MUST have the extra AWS setup for:
 
 This may seem a lot of preparation but it is needed for full test coverage. 
 
-These configuration SHOULD go into an XIncludable configuration file which can be referenced absolutely,
+These configuration SHOULD go into an XInclude-able configuration file which can be referenced absolutely,
 for example in a directory `~/config/auth-keys.xml`, which can be
 referenced both from hadoop-aws tests, and in full distributions you have
 built up.
@@ -223,9 +223,17 @@ and `etc/hadoop/core-site.xml` will look identical
 </configuration>
 ```
 
-Tip: initialize that `~/config/` directory as a *local* github repo, it is easier to
+#### Recommendations
+
+Initialize that `~/config/` directory as a *local* github repo, it is easier to
 see what you've broken. Obviously you MUST NOT push it to any remote repo if it contains
 your AWS secrets.
+
+Have a separate XInclude file for the test-related settings for each endpoint, to
+make switching between them easier.
+
+
+
 
 
 Step 1: Test bucket B1 with configurations as below. This ensures:
@@ -722,7 +730,7 @@ What's the best order?
 
 
 
-### Manual, Exploratory testing.
+## Manual, Exploratory testing.
 
 
 We need a run through of the CLI to see if there have been changes there
@@ -766,39 +774,57 @@ From the root of the project, create a command line release `mvn package -Pdist 
 export HADOOP_OPTIONAL_TOOLS="hadoop-aws"
 ```
 
+### CLI commands
+
 Now run some basic hadoop CLI operations.
 
-*note* these examples are from the previous qualifying section in testing.md; they have not been updated for the multi-bucket setup.
+1. these examples are from the previous qualifying section in testing.md; they have not been updated for the multi-bucket setup.
+2. You do not need to run these commands against all buckets, but 
 Changing the environment variables should suffice.
-
+3. Consider any new logged message an error.
+   If it comes from a changed part of hadoop itself, track the cause down and file a related JIRA.
+   Those aren't blockers, but as not enough people run manual CLI commands before the release phase,
+   you may be the the first person to notice it.
+   Example [HADOOP-19514. SecretManager logs at INFO in bin/hadoop calls](https://issues.apache.org/jira/browse/HADOOP-19514).
+4. 
 ```bash
 
 export BUCKETNAME=example-bucket-name
 export BUCKET=s3a://$BUCKETNAME
 
+# fish equivalents
+# set -gx BUCKETNAME example-bucket-name
+# set -gx BUCKET s3a://$BUCKETNAME
+
+echo $BUCKET
+
 bin/hadoop s3guard bucket-info $BUCKET
 
 bin/hadoop s3guard uploads $BUCKET
 # repeat twice, once with "no" and once with "yes" as responses
-bin/hadoop s3guard uploads -abort $BUCKET
+bin/hadoop s3guarcd uploads -abort $BUCKET
 
 # ---------------------------------------------------
 # root filesystem operatios
 # ---------------------------------------------------
 
+# 
 bin/hadoop fs -ls $BUCKET/
-# assuming file is not yet created, expect error and status code of 1
+# expect: No such file or directory
 bin/hadoop fs -ls $BUCKET/file
 
 # exit code of 0 even when path doesn't exist
 bin/hadoop fs -rm -R -f $BUCKET/dir-no-trailing
 bin/hadoop fs -rm -R -f $BUCKET/dir-trailing/
 
-# error because it is a directory
+# expect "Is a directory"
 bin/hadoop fs -rm $BUCKET/
 
 bin/hadoop fs -touchz $BUCKET/file
-# expect I/O error as it is the root directory
+# error "Is a directory"
+bin/hadoop fs -touchz $BUCKET
+
+# error: S3A: Cannot delete the root directory.
 bin/hadoop fs -rm -r $BUCKET/
 
 # succeeds
@@ -811,30 +837,54 @@ bin/hadoop fs -rm -r $BUCKET/\*
 bin/hadoop fs -mkdir $BUCKET/dir-no-trailing
 bin/hadoop fs -mkdir $BUCKET/dir-trailing/
 bin/hadoop fs -touchz $BUCKET/file
+
+# expect the two directories and the file
 bin/hadoop fs -ls $BUCKET/
+
 bin/hadoop fs -mv $BUCKET/file $BUCKET/file2
 # expect "No such file or directory"
 bin/hadoop fs -stat $BUCKET/file
 
-# expect success
+# expect success and a timestamp to be printed
 bin/hadoop fs -stat $BUCKET/file2
 
 # expect "file exists"
 bin/hadoop fs -mkdir $BUCKET/dir-no-trailing
+
+# expect success
 bin/hadoop fs -mv $BUCKET/file2 $BUCKET/dir-no-trailing
+
+# expect success and a timestamp to be printed
 bin/hadoop fs -stat $BUCKET/dir-no-trailing/file2
-# treated the same as the file stat
+
+# same timestamp is printed
 bin/hadoop fs -stat $BUCKET/dir-no-trailing/file2/
+
+# lists the file -the timestamp matches that from the previous command
 bin/hadoop fs -ls $BUCKET/dir-no-trailing/file2/
 bin/hadoop fs -ls $BUCKET/dir-no-trailing
+
+# repeated stat calls: expect the timestamp to increase on the invocations
+# because directories don't really exist
+bin/hadoop fs -stat $BUCKET/dir-no-trailing
+bin/hadoop fs -stat $BUCKET/dir-no-trailing
+bin/hadoop fs -stat $BUCKET/dir-no-trailing
+
 # expect a "0" here:
 bin/hadoop fs -test -d  $BUCKET/dir-no-trailing ; echo $?
+
 # expect a "1" here:
 bin/hadoop fs -test -d  $BUCKET/dir-no-trailing/file2 ; echo $?
-# will return NONE unless bucket has checksums enabled
+# will return NONE unless bucket has checksums enabled. If it does, an etag is printed
 bin/hadoop fs -checksum $BUCKET/dir-no-trailing/file2
+
 # expect "etag" + a long string
 bin/hadoop fs -D fs.s3a.etag.checksum.enabled=true -checksum $BUCKET/dir-no-trailing/file2
+
+# epect NONE
+bin/hadoop fs -D fs.s3a.etag.checksum.enabled=false -checksum $BUCKET/dir-no-trailing/file2
+
+# expect success
 bin/hadoop fs -expunge -immediate -fs $BUCKET
 
 # ---------------------------------------------------
@@ -843,36 +893,46 @@ bin/hadoop fs -expunge -immediate -fs $BUCKET
 
 # failure unless delegation tokens are enabled
 bin/hdfs fetchdt --webservice $BUCKET secrets.bin
-# success
-bin/hdfs fetchdt -D fs.s3a.delegation.token.binding=org.apache.hadoop.fs.s3a.auth.delegation.SessionTokenBinding --webservice $BUCKET secrets.bin
+
+# success, even on third party stores
+# expect "Created S3A Delegation Token: Kind: S3ADelegationToken/Full"
+bin/hdfs fetchdt -D fs.s3a.delegation.token.binding=org.apache.hadoop.fs.s3a.auth.delegation.FullCredentialsTokenBinding --webservice $BUCKET secrets.bin
+
+# prints "Token (S3ATokenIdentifier{S3ADelegationToken/Full"...
 bin/hdfs fetchdt -print secrets.bin
 
-# expect warning "No TokenRenewer defined for token kind S3ADelegationToken/Session"
+# expect success exit code
+# expect: WARN  token.Token (Token.java:getRenewer(478)) - No TokenRenewer defined for token kind S3ADelegationToken/Full
 bin/hdfs fetchdt -renew secrets.bin
 
 
 # ---------------------------------------------------
-# Copy to from local
+# Copy to/from local
+# if any time out it may be a sign of timeout settings too low,
+# which, if these are the default values, is a problem.
 # ---------------------------------------------------
 
-time bin/hadoop fs -copyFromLocal -t 10  share/hadoop/tools/lib/*aws*jar $BUCKET/
+time bin/hadoop fs -Dfs.iostatistics.logging.level=info -copyFromLocal -t 10  share/hadoop/tools/lib/*bundle*jar $BUCKET/
 
+# expect bundle.jar to be listed
 # expect the iostatistics object_list_request value to be O(directories)
-bin/hadoop fs -ls -R $BUCKET/
+bin/hadoop fs -Dfs.iostatistics.logging.level=info  -ls -R $BUCKET/
 
-# expect the iostatistics object_list_request and op_get_content_summary values to be 1
+# expect this size to be over 600 MB
 bin/hadoop fs -du -h -s $BUCKET/
 
 mkdir tmp
-time bin/hadoop fs -copyToLocal -t 10  $BUCKET/\*aws\* tmp
+
+time bin/hadoop fs -Dfs.iostatistics.logging.level=info -copyToLocal -t 10  $BUCKET/\*bundle\* tmp
 
 # ---------------------------------------------------
 # Cloudstore
 # check out and build https://github.com/steveloughran/cloudstore
-# then for these tests, set CLOUDSTORE env var to point to the JAR
+# then for these tests, set the CLOUDSTORE env var to point to the JAR created
+# cloudstore/target/cloudstore-1.0.jar
 # ---------------------------------------------------
 
-bin/hadoop jar $CLOUDSTORE storediag $BUCKET
+bin/hadoop jar $CLOUDSTORE storediag -w $BUCKET
 
 # stresses upload speed, and that the pool and timeout settings work
 time bin/hadoop jar $CLOUDSTORE bandwidth 512M $BUCKET/testfile
