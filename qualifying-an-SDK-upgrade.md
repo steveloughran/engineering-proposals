@@ -132,7 +132,7 @@ Submitter must have the following buckets:
 * B1: 
     - S3 standard
     - SSE-KMS at bucket level
-    - Also has S3 server logging to B2. Not
+    - Also has S3 server logging to B2. 
 * B2: 
     - S3 standard
     - versioned (with versions configured to delete after 7 days)
@@ -155,10 +155,10 @@ with long link to the test system
 
 | Id   | Class             | Config                                                    |
 |------|-------------------|-----------------------------------------------------------|
-| B1   | S3 standard       | SSE-KMS; versioned. Has S3 server logging to B2           |
-| B2   | S3 standard       | Path style access, MUST BE same region as B1.             |
+| B1   | S3 standard       | SSE-KMS; Has S3 server logging to B2                      |
+| B2   | S3 standard       | Path style access, versioned, MUST BE same region as B1.  |
 | B2AP | Access Point      | Access Point to B2 also with access point (TLS 1.3+ only) |
-| B3   | S3 express        | Optionally: encrypted with CSE-KMS                        |
+| B3   | S3 express        | Default configurations                                    |
 | B4   | S3 standard       | Long haul link in US and access point access              |
 | B5   | Third-party store | Google GCS or other third-party store                     |
 
@@ -228,9 +228,36 @@ see what you've broken. Obviously you MUST NOT push it to any remote repo if it 
 your AWS secrets.
 
 
+Step 1: Test bucket B1 with configurations as below. This ensures:
+* Assumed role enabled - Required for  ITestAssumeRole tests
+* Encryption set to SSE-KMS
+* Scale tests enabled
+* Contract tests enabled
+* No region set - Ensures region resolution works
+
 ```xml
 
 <configuration>
+    <property>
+       <name>test.fs.s3a.name</name>
+       <value>${B1}</value>
+    </property>
+    
+   <property>
+       <name>fs.contract.test.fs.s3a</name>
+       <value>${test.fs.s3a.name}</value>
+   </property>
+
+   <property>
+        <name>fs.s3a.access.key</name>
+        <value>${YOUR_ACCESS_KEY}</value>
+   </property>
+
+  <property>
+      <name>fs.s3a.secret.key</name>
+      <value>${YOUR_SECRET_KEY}</value>
+   </property> 
+    
   <property>
     <name>fs.s3a.assumed.role.arn</name>
     <value>$ROLE_ARN</value>
@@ -250,15 +277,10 @@ your AWS secrets.
     <name>fs.s3a.assumed.role.sts.endpoint.region</name>
     <value>$REGION</value>
   </property>
-
+    
   <property>
-    <name>fs.s3a.assumed.role.external.id</name>
-    <value>any arbitrary.value</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.bucket.B1.encryption.algorithm</name>
-    <value>SSE-KMS</value>
+     <name>fs.s3a.encryption.algorithm</name>
+     <value>SSE-KMS</value>
   </property>
 
   <property>
@@ -272,22 +294,209 @@ your AWS secrets.
   </property>
 
   <property>
-    <name>fs.s3a.bucket.B3.connection.expect.continue</name>
-    <value>false</value>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
   </property>
-
-  <property>
-    <name>fs.s3a.bucket.B1.input.stream.type</name>
-    <value>analytics</value>
-  </property>
-  
-  <property>
-    <name>fs.s3a.bucket.B2.input.stream.type</name>
-    <value>classic</value>
-  </property>
-  
 </configuration>
 ```
+
+Step 2: Test bucket B2 with configuration as below. This ensures:
+* Analytics stream is used for all reading
+* Path style access is enabled
+* Scale tests enabled
+
+```xml
+<configuration>
+    <property>
+        <name>test.fs.s3a.name</name>
+        <value>${B2}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.endpoint.region</name>
+        <value>${B2_Region}</value>
+    </property>
+    
+    <property>
+        <name>fs.contract.test.fs.s3a</name>
+        <value>${test.fs.s3a.name}</value>
+    </property>
+    
+    <property>
+        <name>fs.s3a.access.key</name>
+        <value>${YOUR_ACCESS_KEY}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.secret.key</name>
+        <value>${YOUR_SECRET_KEY}</value>
+    </property>
+    
+    <property>
+        <name>fs.s3a.scale.test.enabled</name>
+        <value>true</value>
+    </property>
+    
+    <property>
+      <name>fs.s3a.path.style.access</name>
+       <value>true</value>
+    </property>
+    
+   <property>
+     <name>fs.s3a.input.stream.type</name>
+     <value>analytics</value>
+   </property>       
+
+</configuration>
+```
+
+Step 3: For your version bucket $B2, enable access points, using configuration as below:
+
+```xml
+<configuration>
+    <property>
+        <name>test.fs.s3a.name</name>
+        <value>${B2}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.endpoint.region</name>
+        <value>${B2_Region}</value>
+    </property>
+
+    <property>
+        <name>fs.contract.test.fs.s3a</name>
+        <value>${test.fs.s3a.name}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.access.key</name>
+        <value>${YOUR_ACCESS_KEY}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.secret.key</name>
+        <value>${YOUR_SECRET_KEY}</value>
+    </property>
+    
+    <property>
+        <name>fs.s3a.scale.test.enabled</name>
+        <value>true</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.bucket.{B2}.accesspoint.arn</name>
+        <value>${ACCESS_POINT_ARN}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.bucket.{B2}.accesspoint.required</name>
+        <value>true</value>
+    </property>
+</configuration>
+```
+
+Step 4: Test your S3-Express bucket with configurations as below:
+
+```xml
+<configuration>
+    <property>
+        <name>test.fs.s3a.name</name>
+        <value>${B3}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.endpoint.region</name>
+        <value>${B3_Region}</value>
+    </property>
+
+    <property>
+        <name>fs.contract.test.fs.s3a</name>
+        <value>${test.fs.s3a.name}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.access.key</name>
+        <value>${YOUR_ACCESS_KEY}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.secret.key</name>
+        <value>${YOUR_SECRET_KEY}</value>
+    </property>
+
+    <property>
+       <name>fs.s3a.connection.expect.continue</name>
+        <value>false</value>
+    </property>
+    
+    <property>
+        <name>fs.s3a.scale.test.enabled</name>
+        <value>true</value>
+    </property>
+
+</configuration>
+```
+
+Step 5: Test your long-haul bucket $B4, with configuration as below. This ensures:
+* CSE-KMS is enabled
+* FIPS enabled, assuming your long haul bucket is within a US region. 
+
+```xml
+<configuration>
+    <property>
+        <name>test.fs.s3a.name</name>
+        <value>${B4}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.endpoint.region</name>
+        <value>${B4_REGION}</value>
+    </property>
+
+    <property>
+        <name>fs.contract.test.fs.s3a</name>
+        <value>${test.fs.s3a.name}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.access.key</name>
+        <value>${YOUR_ACCESS_KEY}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.secret.key</name>
+        <value>${YOUR_SECRET_KEY}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.encryption.key</name>
+        <value>${ENCRYPTION_KEY_ARN}</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.encryption.algorithm</name>
+        <value>CSE-KMS</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.encryption.enabled</name>
+        <value>true</value>
+    </property>
+    
+    <property>
+        <name>fs.s3a.scale.test.enabled</name>
+        <value>true</value>
+    </property>
+
+    <property>
+        <name>fs.s3a.endpoint.fips</name>
+        <value>true</value>
+    </property>
+</configuration>
+```
+
+Step 6: Test bucket $B5 with a third party store.
 
 #### Testing Open SSL
 
