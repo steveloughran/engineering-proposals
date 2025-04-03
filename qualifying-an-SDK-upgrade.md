@@ -1094,7 +1094,6 @@ Other changes needed to fix test failures MUST go into a
 separate commit in the same branch.
 
 
-
 ## Handling compile/test failures
 
 * this is still a bit messy with duplicate text*
@@ -1267,7 +1266,7 @@ Then we have a set of attestations
 [ ] I have added one or more new CLI tests to run; they are included in this PR. (forces submitter to think of new tests rather than set as "complete")
 [ ] The formatted test results are attached as a single .tar file containing a subdir for each test bucket.
 
-Then
+Then:
 
 1. Measure the execution time of before/after runs should be listed to see if there is any slowdown vs the previous version.
 A simple `time mvn -T 1C verify -Dscale -Dparallel` of the hadoop-aws dir after just having done a `mvn clean install` to take that out of the timing would be enough.
@@ -1291,11 +1290,28 @@ The key point here is to
 1. Make clear that and that whoever providing the update owns a lot of the upgrade problem, rather than expect others to handle it.
 2. Highlight that regressions are blockers on upgrades.
 
-#### SDK summary
+## Committing the work.
 
-Assuming that we are the first people to deploy applications with the V2 SDK the scale of terabytes to petabytes of data a day, I think we should be treated as a priority source of bug reports: _we are finding things before other people encounter them_.
-Sometimes we do find them in production environments -but as they will be widely encountered in many other installations, and each of these may surface as an escalation through their customer account, early fixes matter.
+The SDK update and any code changes MUST go in as separate commits into the trunk branch,
+to isolate the changes better.
+IF there are no code changes -excellent!
 
+Critical: include the AWS SDK version in the title of the commits.
+
+1. Commit the library change PR, note in comments that it requires the follow-on patch.
+2. Code fix PR: If there have been multiple code changes to fix compatibility with the releases,
+   merge the commits together, into the single "code fixes" commit.
+   Commit that, referencing the SDK update. 
+
+
+## Backporting
+
+Cherrypick the upgrade and code fix patches in order.
+This is also the time to review the commit messages to see if they
+are correct.
+
+* MUST: rerun the `hadoop-aws` integration tests
+* MUST: do a release build and try out some of the commands.
 
 
 # Appendices
@@ -1466,7 +1482,6 @@ log4j.logger.org.apache.hadoop.metrics2=ERROR
 log4j.logger.org.apache.hadoop.net.NetworkTopology=WARN
 log4j.logger.org.apache.hadoop.security.authentication.server.AuthenticationFilter=WARN
 log4j.logger.org.apache.hadoop.security.token.delegation=WARN
-log4j.logger.org.apache.hadoop.security.token.SecretManager=WARN
 log4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
 log4j.logger.org.apache.hadoop.util.GSet=WARN
 log4j.logger.org.apache.hadoop.util.JvmPauseMonitor=WARN
@@ -1509,5 +1524,10 @@ log4j.logger.org.apache.hadoop.fs.s3a.S3AStorageStatistics=INFO
 # Low-level trace of HTTP requests.
 # log4j.logger.software.amazon.awssdk.request=DEBUG
 # log4j.logger.software.amazon.awssdk.thirdparty.org.apache.http=DEBUG
+
+# Set to trace for detail metrics to be printed in
+# LoggingMetricPublisher; set that to INFO for the output to be visible.
+# log4j.logger.org.apache.hadoop.fs.s3a.DefaultS3ClientFactory=TRACE
+
 
 ```
