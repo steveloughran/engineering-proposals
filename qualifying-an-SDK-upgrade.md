@@ -39,9 +39,9 @@ The task of qualifying an AWS SDK is a lot more than just incrementing a number 
 
 ## Introduction
 
-An AWS SDK update is a significant change to the codebase.
+An AWS SDK update is a significant change to the `hadoop-aws` codebase. The rest of the project _should_ be unaffected, but there may be packaging-related issues in the final binary release, 
 
-The S3A connector is utterly dependent upon it and even a minor change can have serious consequences.
+The S3A connector is utterly dependent upon the AWS SDK; even a minor change can have serious consequences.
 That is: a single line change in a maven file can bring new features and needed bug fixes.
 It can also cause a lot of damage, albeit unintentionally.
 
@@ -63,19 +63,27 @@ The core semantics of the S3A/SDK integration can be reasonably well tested simp
 * Third-party storage
 
 
-The challenge when qualifying an SDK is to make sure that condition holds. 
+The challenge when qualifying an SDK is to make sure that the following condition holds:
+
+> After an upgrade to the SDK, it is still possible to read and write data to all classes of AWS S3 store,
+> and all third-party stores which were previously supported.
+> This condition must hold for the command line and downstream applications; the hadoop-aws
+> test suites are necessary but not sufficient.
 
 From the outset, assume that there is a regression -and that your challenge is to find it.
 That is rather than the qualification being a process  "run some automated and manual test to show that all is well",
 the task has to be approached as one of "find out what has broken, where and why".
 Then we can worry about how to fix. 
 
-The test process then: run the usual integration test with as many of the optional features covered.
+The test process then: 
+
+1. Run the usual integration test with as many of the optional features covered.
 Do not simply verify that everything appears to have worked:
 you must also look through all the log output to make sure there are no new warning messages being printed indicating a mismatch between how the S3A code is using the library and the library expects to be used. 
+2. Build a binary release and test through the command line.
+3. Build and test as many downstream applications as you can.
 
-
-What happens if a regression does surface and the qualification process that did not find it
+> What happens if a regression does surface and the qualification process that did not find it
 -and now the SDK upgrade has been applied?
 
 We revert. Immediately. Then the process for identifying and trying to remedy the issue surfaces.
@@ -84,7 +92,8 @@ Here as well as identifying the root course we need to assess what is the impact
 We may need to issue a new Hadoop release.
 This is time-consuming and painful and for a simple needless hard work. This is why it is so important we have to get it right.
 
-What happens if I absolutely need a new feature in the latest SDK?
+> What happens if I absolutely need a new feature in the latest SDK?
+
 Congratulations! You have just taken on the task of qualifying the SDK release!
 
 
@@ -156,7 +165,6 @@ Submitter must have the following buckets:
 Testing with a least one third-party store is critical, as is an S3 Express store.
 Ideally, test with multiple third-party stores.
 
-with long link to the test system
 
 | Id   | Class             | Config                                                    |
 |------|-------------------|-----------------------------------------------------------|
@@ -198,9 +206,10 @@ You can start with a single host, but you will need to validate the behaviour of
 Within AWS
 1. EC2/kerberos deployment outside us-central and within a VPC whose network rules can be configured to not allow access to us-central/us-east.
    The build can done without that rule (needed for the artifact download), but a test run must be one locked down. This is to validate local region resolution.
-3. On a remote host, with any config for the AWS CLI (temporarily) renamed from `~/.aws/config`. to something else.
-  This is needed to make sure the SDK isn't reading region/endpoint info from that file, as
-  it can do.
+3. On a remote host, with any config for the AWS CLI (temporarily) renamed from `~/.aws/config`. to something else. 
+   This is needed to make sure the SDK isn't reading region/endpoint info from that file, as
+   it can do -and which can therefore accidentally hide regressions.
+   Note: renaming your config file before running CLI testing should be enough for this,.
 
 
 ### Configuration and extra services
@@ -236,9 +245,6 @@ your AWS secrets.
 
 Have a separate XInclude file for the test-related settings for each endpoint, to
 make switching between them easier.
-
-
-
 
 
 Step 1: Test bucket B1 with configurations as below. This ensures:
@@ -319,46 +325,47 @@ Step 2: Test bucket B2 with configuration as below. This ensures:
 * Scale tests enabled
 
 ```xml
+
 <configuration>
-    <property>
-        <name>test.fs.s3a.name</name>
-        <value>${B2}</value>
-    </property>
+  <property>
+    <name>test.fs.s3a.name</name>
+    <value>${B2}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.endpoint.region</name>
-        <value>${B2_Region}</value>
-    </property>
-    
-    <property>
-        <name>fs.contract.test.fs.s3a</name>
-        <value>${test.fs.s3a.name}</value>
-    </property>
-    
-    <property>
-        <name>fs.s3a.access.key</name>
-        <value>${YOUR_ACCESS_KEY}</value>
-    </property>
+  <property>
+    <name>fs.s3a.endpoint.region</name>
+    <value>${B2_Region}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.secret.key</name>
-        <value>${YOUR_SECRET_KEY}</value>
-    </property>
-    
-    <property>
-        <name>fs.s3a.scale.test.enabled</name>
-        <value>true</value>
-    </property>
-    
-    <property>
-      <name>fs.s3a.path.style.access</name>
-       <value>true</value>
-    </property>
-    
-   <property>
-     <name>fs.s3a.input.stream.type</name>
-     <value>analytics</value>
-   </property>       
+  <property>
+    <name>fs.contract.test.fs.s3a</name>
+    <value>${test.fs.s3a.name}</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>${YOUR_ACCESS_KEY}</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>${YOUR_SECRET_KEY}</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.input.stream.type</name>
+    <value>analytics</value>
+  </property>
 
 </configuration>
 ```
@@ -366,87 +373,89 @@ Step 2: Test bucket B2 with configuration as below. This ensures:
 Step 3: For your version bucket $B2, enable access points, using configuration as below:
 
 ```xml
+
 <configuration>
-    <property>
-        <name>test.fs.s3a.name</name>
-        <value>${B2}</value>
-    </property>
+  <property>
+    <name>test.fs.s3a.name</name>
+    <value>${B2}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.endpoint.region</name>
-        <value>${B2_Region}</value>
-    </property>
+  <property>
+    <name>fs.s3a.endpoint.region</name>
+    <value>${B2_Region}</value>
+  </property>
 
-    <property>
-        <name>fs.contract.test.fs.s3a</name>
-        <value>${test.fs.s3a.name}</value>
-    </property>
+  <property>
+    <name>fs.contract.test.fs.s3a</name>
+    <value>${test.fs.s3a.name}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.access.key</name>
-        <value>${YOUR_ACCESS_KEY}</value>
-    </property>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>${YOUR_ACCESS_KEY}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.secret.key</name>
-        <value>${YOUR_SECRET_KEY}</value>
-    </property>
-    
-    <property>
-        <name>fs.s3a.scale.test.enabled</name>
-        <value>true</value>
-    </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>${YOUR_SECRET_KEY}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.bucket.{B2}.accesspoint.arn</name>
-        <value>${ACCESS_POINT_ARN}</value>
-    </property>
+  <property>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.bucket.{B2}.accesspoint.required</name>
-        <value>true</value>
-    </property>
+  <property>
+    <name>fs.s3a.bucket.{B2}.accesspoint.arn</name>
+    <value>${ACCESS_POINT_ARN}</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.bucket.{B2}.accesspoint.required</name>
+    <value>true</value>
+  </property>
 </configuration>
 ```
 
 Step 4: Test your S3-Express bucket with configurations as below:
 
 ```xml
+
 <configuration>
-    <property>
-        <name>test.fs.s3a.name</name>
-        <value>${B3}</value>
-    </property>
+  <property>
+    <name>test.fs.s3a.name</name>
+    <value>${B3}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.endpoint.region</name>
-        <value>${B3_Region}</value>
-    </property>
+  <property>
+    <name>fs.s3a.endpoint.region</name>
+    <value>${B3_Region}</value>
+  </property>
 
-    <property>
-        <name>fs.contract.test.fs.s3a</name>
-        <value>${test.fs.s3a.name}</value>
-    </property>
+  <property>
+    <name>fs.contract.test.fs.s3a</name>
+    <value>${test.fs.s3a.name}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.access.key</name>
-        <value>${YOUR_ACCESS_KEY}</value>
-    </property>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>${YOUR_ACCESS_KEY}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.secret.key</name>
-        <value>${YOUR_SECRET_KEY}</value>
-    </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>${YOUR_SECRET_KEY}</value>
+  </property>
 
-    <property>
-       <name>fs.s3a.connection.expect.continue</name>
-        <value>false</value>
-    </property>
-    
-    <property>
-        <name>fs.s3a.scale.test.enabled</name>
-        <value>true</value>
-    </property>
+  <property>
+    <name>fs.s3a.connection.expect.continue</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
+  </property>
 
 </configuration>
 ```
@@ -456,56 +465,57 @@ Step 5: Test your long-haul bucket $B4, with configuration as below. This ensure
 * FIPS enabled, assuming your long haul bucket is within a US region. 
 
 ```xml
+
 <configuration>
-    <property>
-        <name>test.fs.s3a.name</name>
-        <value>${B4}</value>
-    </property>
+  <property>
+    <name>test.fs.s3a.name</name>
+    <value>${B4}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.endpoint.region</name>
-        <value>${B4_REGION}</value>
-    </property>
+  <property>
+    <name>fs.s3a.endpoint.region</name>
+    <value>${B4_REGION}</value>
+  </property>
 
-    <property>
-        <name>fs.contract.test.fs.s3a</name>
-        <value>${test.fs.s3a.name}</value>
-    </property>
+  <property>
+    <name>fs.contract.test.fs.s3a</name>
+    <value>${test.fs.s3a.name}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.access.key</name>
-        <value>${YOUR_ACCESS_KEY}</value>
-    </property>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>${YOUR_ACCESS_KEY}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.secret.key</name>
-        <value>${YOUR_SECRET_KEY}</value>
-    </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>${YOUR_SECRET_KEY}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.encryption.key</name>
-        <value>${ENCRYPTION_KEY_ARN}</value>
-    </property>
+  <property>
+    <name>fs.s3a.encryption.key</name>
+    <value>${ENCRYPTION_KEY_ARN}</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.encryption.algorithm</name>
-        <value>CSE-KMS</value>
-    </property>
+  <property>
+    <name>fs.s3a.encryption.algorithm</name>
+    <value>CSE-KMS</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.encryption.enabled</name>
-        <value>true</value>
-    </property>
-    
-    <property>
-        <name>fs.s3a.scale.test.enabled</name>
-        <value>true</value>
-    </property>
+  <property>
+    <name>fs.s3a.encryption.enabled</name>
+    <value>true</value>
+  </property>
 
-    <property>
-        <name>fs.s3a.endpoint.fips</name>
-        <value>true</value>
-    </property>
+  <property>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.endpoint.fips</name>
+    <value>true</value>
+  </property>
 </configuration>
 ```
 
@@ -513,9 +523,9 @@ Step 6: Test bucket $B5 with a third party store.
 
 #### Testing Open SSL
 
-On any test system other than an ARM-based macbook, require openssl for one of the buckets other than B1
+On any test system other than an ARM-based macbook, require openssl for one of the buckets other than B1. An EC2 x86 instance is ideal for this.
 
-```xmln
+```xml
 <property>
   <name>fs.s3a.bucket.B2.ssl.channel.mode</name>
   <value>openssl</value>
@@ -591,22 +601,10 @@ Kick off the initial build with that chosen SDK release with the target bucket y
 mvn -T 1C
 
 # hadoop-aws
-time mvn -T 1C integration-test -Dmaven.plugin.validation=none -Dparallel-tests -DtestsThreadCount=9 -Dscale
+mvn -T 1C integration-test -Dmaven.plugin.validation=none -Dparallel-tests -DtestsThreadCount=9 -Dscale --pl hadoop-tools/hadoop-aws
 ```
 
 If it compiles and the tests work, this is the first good sign.
-
-Save the command and the duration (as well as any test failures) to the notes document.
-The duration of the upgrade branch's test run will be compared against this later.
-
-```
-________________________________________________________
-Executed in   17.37 mins    fish           external
-   usr time   26.35 mins   91.00 micros   26.35 mins
-   sys time    3.23 mins  854.00 micros    3.23 mins
-
-```
-
 
 ### Do a full hadoop release build
 
@@ -632,16 +630,16 @@ If it does: file a bug report independent of the qualification
 JIRA, and crosslink with a "testing discovered" relation
 
 
-### Create a full release for manual testing
+### Create a Full Release for Manual Testing
 
-Create 
+Create a release binary
 ```sh
 mvn -T 1C clean package -Pdist -DskipTests -Dmaven.javadoc.skip=true
 ```
 
 move it somewhere.
 
-```fish
+```bash
 mv hadoop-dist/target/hadoop-3.5.0-SNAPSHOT/ ../Releases/preflight
 ```
 
@@ -662,8 +660,9 @@ This will add a new directory `~/External/aws-sdk-java-v2` with the repository.
 If you have already got this directory or an equivalent, update it.
 
 Look in the [tag list](https://github.com/aws/aws-sdk-java-v2/tags) for the tag of the release and check this out.
+For release 2.30.27, the command would be
 
-```
+```sh
 git checkout tag/2.30.27
 ```
 
@@ -708,7 +707,7 @@ software.amazon.awssdk:bundle:2.30.27
 
 ### Do a clean build and create the PR if all is good.
 
-If it compiles
+If it compiles:
 1. Commit the change, including the version number in the title
 1. Push to github
 1. Create a PR -don't include the version there yet.
@@ -723,14 +722,20 @@ Anyone who is collaborating should do the same.
 In `hadoop-aws` directory
 1. Run `mvn verify`
 1. Run the `ILoadTest*` load tests from your IDE or via maven through
-      `mvn verify -Dtest=skip -Dit.test=ILoadTest\* -Dscale`  ; look for regressions in performance
-      as much as failures.
+      `mvn verify -Dtest=skip -Dit.test=ILoadTest\* -Dscale`
+   Look for regressions in performance as much as failures.
 1. Create the site with `mvn site -DskipTests`; look in `target/site` for the report.
 1. Review *every single `-output.txt` file in `hadoop-tools/hadoop-aws/target/failsafe-reports`,
   paying particular attention to
   `org.apache.hadoop.fs.s3a.scale.ITestS3AInputStreamPerformance-output.txt`,
   as that is where changes in stream close/abort logic will surface.
 
+*Important*: reviewing the output may seem needless work but it has been where
+problems logged by the SDK have been found.
+If these are only found later, even though they were in the logs, it will be a sign
+that you didn't do enough due diligence.
+Given that finding the problems now is faster than finding them later, it is not a
+waste of time at all.
 
 
 ### Testing all the buckets.
@@ -749,9 +754,9 @@ What's the best order?
 ## Manual, Exploratory testing.
 
 
-We need a run through of the CLI to see if there have been changes there
+It is critical to manually through of the CLI to see if there have been changes there
 which cause problems, especially whether new log messages have surfaced,
-or whether some packaging change breaks that CLI.
+or whether some packaging change breaks that CLI, odd performance problems surface.
 
 It would be straightforward to automate a sequence of commands,
 but we do not want to because actually having you use the command line from a terminal window is part of the qualification process, as it can identify issues.
@@ -759,11 +764,11 @@ but we do not want to because actually having you use the command line from a te
 * Does it work?
 * Does it suddenly pause for long periods of time? 
 * Are AWS SDK libraries printing warning messages? hadoop-aws code?
-* Has that some other change in the code base unrelated to the SDK which is now printing new warning messages?
+* Has that some other change in the code base unrelated to the SDK which is now printing new warning messages/stopping things from working?
 
 These are things we need to know before end users find out.
 
-The commands below list the minimum set of commands to run;  more you can think of will be wonderful.
+The commands below list the minimum set of commands to run; any more you can think of will be wonderful.
 
 In fact, an ideal outcome of qualifying a upgrade is that you have some new commands to add to this list.
 
@@ -780,7 +785,11 @@ It is always interesting when doing this to enable IOStatistics reporting:
 </property>
 ```
 
-From the root of the project, create a command line release `mvn package -Pdist -DskipTests -Dmaven.javadoc.skip=true  -DskipShade`;
+From the root of the project, create a command line release
+
+```sh
+mvn package -Pdist -DskipTests -Dmaven.javadoc.skip=true  -DskipShade
+```
 
 1. Change into the `hadoop-dist/target/hadoop-x.y.z-SNAPSHOT` dir.
 1. Copy a `core-site.xml` file into `etc/hadoop`.
@@ -794,9 +803,9 @@ export HADOOP_OPTIONAL_TOOLS="hadoop-aws"
 The cloudstore diagnostics and utilities tool is used in the CLI qualification.
 
 1. Check out https://github.com/steveloughran/cloudstore
-2. Build it with the -Psdk2 option and against the new sdk
+2. Build it against the new sdk
 
-         mvn clean package -Psdk2 -Dhadoop.version=3.5.0-SNAPSHOT
+         mvn clean package -Dhadoop.version=3.5.0-SNAPSHOT
         
 3. set the `CLOUDSTORE` env var to point to the JAR created
    `target/cloudstore-1.0.jar`
@@ -836,7 +845,7 @@ Otherwise you need to `echo $?`(bash/zsh) or `echo $status` (fish) to see the ou
 
 ```bash
 
-export BUCKETNAME=example-bucket-name
+export BUCKETNAME=$B1
 export BUCKET=s3a://$BUCKETNAME
 
 # fish equivalents
@@ -870,7 +879,7 @@ bin/hadoop s3guard uploads $BUCKET
 bin/hadoop jar $CLOUDSTORE storediag -w $BUCKET
 
 # ---------------------------------------------------
-# root filesystem operatios
+# root filesystem operations
 # ---------------------------------------------------
 
 # 
@@ -1012,6 +1021,16 @@ time bin/hadoop fs -mv $BUCKET/uploads/ $BUCKET/renamed
 # verify the rename worked
 bin/hadoop fs -ls -R $BUCKET/renamed
 
+```
+#### Cloudstore CLI
+
+The cloudstore commands help test lower-level aspects of the system, load generation
+operations and more. They also print a lot more diagnostics on failure than
+the hadoop fs commands. 
+
+```bash
+
+
 # ---------------------------------------------------
 # Cloudstore
 # ---------------------------------------------------
@@ -1021,6 +1040,13 @@ bin/hadoop jar $CLOUDSTORE bucketmetadata $BUCKET
 
 # stresses upload speed, and that the pool and timeout settings work
 time bin/hadoop jar $CLOUDSTORE bandwidth 512M $BUCKET/testfile
+
+# repeat for analytics policy
+time bin/hadoop jar $CLOUDSTORE bandwidth -policy analytics -rename 512M $BUCKET/testfile
+
+# repeat then close during the download (not the upload, we know that can hang)
+time bin/hadoop jar $CLOUDSTORE bandwidth -policy analytics -rename 512M $BUCKET/testfile
+
 
 # bulk upload command, optimized for cloud storage.
 # Expect a fast parallelized upload of all the libraries; bundle.jar file is the slow one
@@ -1052,9 +1078,11 @@ bin/hadoop jar $CLOUDSTORE bulkdelete -verbose -page 5 $BUCKET/ downloads/listin
 
 ```
 
-+Any other commands you can think of!
+#### Final Commands
 
-### Don't forget to clean up!
+Add any other commands you can think of!
+
+#### Don't forget to clean up!
 
 Clean up all objects, _and all pending uploads_.
 That really matters for stores which don't support lifecycle policies.
@@ -1193,11 +1221,11 @@ If it is a small change, especially a low risk test one, include it in the SDK u
  
 If it is a large change:
 1. Create a Hadoop PR to update the SDK only.
-1. Create a feature branch with the commit of #1 at the bottom.
-2. Get all the code reviewed by the normal process *but do not merge it once approved*
-3. The final merge should be done with a merge of the SDK in first, with that commit
+2. Create a feature branch with the commit of #1 at the bottom.
+3. Get all the code reviewed by the normal process *but do not merge it once approved*
+4. The final merge should be done with a merge of the SDK in first, with that commit
    message declaring it must be followed by the big patch (state the JIRA and PR IDs))
-4. Apply the big patch immediately after the SDK update PR is merged, with a mention
+5. Apply the big patch immediately after the SDK update PR is merged, with a mention
    of that JIRA/PR ID in the commit message body.
 
 
@@ -1208,10 +1236,14 @@ This is a problem, the seriousness depends on the nature of the issue.
 #### Create a Hadoop JIRA
 
 1. Create a JIRA with as much information as you can.
-1. Describe the problem replicated, the consequences.
-1. Check out the relevant SDK release and see if you can identify the root cause.
+2. Describe the problem replicated, the consequences.
+3. Check out the relevant SDK release and see if you can identify the root cause.
    It's complex enough that this is unlikely, but gaining familiarity with
-   the SDK is a good investement.
+   the SDK is a good investment.
+4. See if you can replicate it reliably manually or as a JUnit test.
+   A JUnit test is ideal as it makes regression testing straightforward -though as most of
+   the recent regressions have been related to service failures or jobs of an hour or more,
+   rare.
 
 #### Look for an existing SDK issue
 
@@ -1234,7 +1266,7 @@ Note that the class `org.apache.hadoop.fs.s3a.impl.AwsSdkWorkarounds` is a place
 logging is already in there.
 
 This class has its own ITests. Ideally these tests should fail when the underlying issue is fixed
--this hightlighs when a workaround can be removed.
+-this highlights when a workaround can be removed.
 
 If one cannot be found then we are essentially blocked from upgrading the AWS SDK at all.
 We have had to do exactly this with problems related to library shading.
