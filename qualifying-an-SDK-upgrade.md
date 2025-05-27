@@ -1342,9 +1342,13 @@ Cherrypick the upgrade and code fix patches in order.
 This is also the time to review the commit messages to see if they
 are correct.
 
-* MUST: rerun the `hadoop-aws` integration tests
-* MUST: do a release build and try out some of the commands.
+* MUST: rerun the `hadoop-aws` integration tests against AWS and third party stores.
+* MUST: do a release build and try out some of the commands against one AWS and one third party stores.
 
+Do not assume that just because it worked in trunk it'll work in a backport: the further back you go, the more the codebase diverges, the more likelihood of problems.
+
+It may be necessary to cherrypick other patches before the SDK upgrade goes through.
+If so: do it.
 
 # Appendices
 
