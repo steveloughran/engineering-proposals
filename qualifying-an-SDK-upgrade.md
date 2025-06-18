@@ -12,6 +12,11 @@
   limitations under the License. See accompanying LICENSE file.
 -->
 
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL
+NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and
+"OPTIONAL" in this document are to be interpreted as described in
+RFC 2119.
+
 # Qualifying an AWS SDK upgrade 
 
 
@@ -19,7 +24,9 @@
 > We may introduce and enable new features by default, such as these new default integrity protections,
 > prior to them being supported or otherwise handled by third-party service implementations.
 
-That is a quote from an [announcement of a somewhat incompatible change](https://github.com/aws/aws-sdk-java-v2/discussions/5802) which shipped in v 2.30.0 of the AWS SDK.
+That is a quote from an
+[announcement of a somewhat incompatible change](https://github.com/aws/aws-sdk-java-v2/discussions/5802)
+which shipped in v 2.30.0 of the AWS SDK.
 
 It highlights the SDK team's point of view: their job is work on the SDK to support AWS's own services.
 Compatibility with third party services is not their problem, and they do not test against such stores.
@@ -28,32 +35,35 @@ This makes sense from their perspective: if someone implements their own S3 stor
 their task to make it compatible with AWS S3, even as that is a moving target with no public
 formal API specification.
 
-The S3A connector is one of the most popular of S3 connectors used to connect JVM-hosted big-data applications to AWS S3 *and to other S3-compatible stores*.
+The S3A connector is one of the most popular of S3 connectors used to connect
+JVM-hosted big-data applications to AWS S3 *and to other S3-compatible stores*.
 We do not have the luxury of saying "third party stores are not our problem", so have to make
 sure that our release works with all stores.
 
-And because of that broad adoption, we need to make sure that it works in different deployment scenarios, with different configurations even within AWS.
+And because of that broad adoption, we need to make sure that it works in
+different deployment scenarios, with different configurations even within AWS.
 
-The task of qualifying an AWS SDK is a lot more than just incrementing a number in a maven POM file.
+The task of qualifying an AWS SDK is a lot more than just incrementing a number in a maven POM file:
+it is determining whether or not the SDK is safe to adopt, and, if safe,
+identifying and making any changes in our code that are needed to migrate.
 
 
 ## Introduction
 
-An AWS SDK update is a significant change to the `hadoop-aws` codebase. The rest of the project _should_ be unaffected, but there may be packaging-related issues in the final binary release, 
-
 The S3A connector is utterly dependent upon the AWS SDK; even a minor change can have serious consequences.
-That is: a single line change in a maven file can bring new features and needed bug fixes.
+That is: changing a single number in a maven file can bring new features and needed bug fixes.
 It can also cause a lot of damage, albeit unintentionally.
 
 Some example regresssions encountered previously include:
 * The SDK printing a warning message telling developers off every time a specific object in the SDK is instantiated
   This breaks all tests which look for specific output strings and runs a risk of generating support calls asking "why is my application telling me off?" 
 * A change in the semantics of calling `abort()` on a stream.
-  This was a valid design decision. However, it was unexpected. And again the warning message printed every time the stream was closed prematurely flooded application logs.
+  This was a valid design decision —however, it was unexpected.
+  And again the warning message printed every time the stream was closed prematurely flooded application logs.
 * Instabilities in the shading of third-party libraries (slf4j, etc)
-* The shaded library unintentionally declaring dependencies which redundant due to the shading.
+* The shaded library continuing to declare dependencies which redundant due to the shading.
 
-Third-party store support can also be trouble as it does not appear to be something tested by the AWS SDK team themselves (why would they?). This means our code may be one of the first contact points between an update of the SDK and third-party stores.
+Third-party store support can also be trouble as it is not something tested by the AWS SDK team themselves (why would they?). This means our code may be one of the first contact points between an update of the SDK and third-party stores.
 
 The core semantics of the S3A/SDK integration can be reasonably well tested simply by running the S3A integration test suite with all the optional features covered:
 * KMS encryption
@@ -97,6 +107,8 @@ This is time-consuming and painful and for a simple needless hard work. This is 
 Congratulations! You have just taken on the task of qualifying the SDK release!
 
 
+
+
 ## Stop! Is this a last minute action before a release?
 
 If so: _it is too late_.
@@ -137,43 +149,50 @@ store types we can.
 
 This is done through a combination of different S3 implementations,
 and by having a complex test matrix of different configurations
-for a small set of AWS S3 test buckets.
+for a very small set of S3 test buckets in AWS and elsewhere
 
 ### Test Buckets
 
 
-Submitter must have the following buckets:
-* B1: 
+
+Submitter MUST have the following buckets:
+* `B1`: 
     - S3 standard
     - SSE-KMS at bucket level
-    - Also has S3 server logging to B2. 
-* B2: 
+    - SHOULD S3 server logging to B2. 
+* `B2`: 
     - S3 standard
-    - versioned (with versions configured to delete after 7 days)
-    - configured with path style access.
-    - This should also have an access point defined -`B2AP` is a bucket configuration
+    - MUST: versioned (with versions configured to delete after 7 days)
+    - MUST: configured with path style access.
+    - MUST: configured to buffer writes into an array.
+      (Note, one test may OOM here, don't worry about it)
+    - SHOULD have an access point defined.
+      In this document`B2AP` is the bucket configuration
       to access it via the AP.
-* B3: S3 express
-    - Using CSE-KMS
-* B4: S3 standard  (i.e. if you test in usw-2, this is is us-east
+* `B3`: S3 express
+    - MAY: Using CSE-KMS
+* `B4`: S3 standard  (i.e. if you test in usw-2, this is is us-east
     - S3 standard
     - us-central/us-east-1n
-    - with long-long distance link to the test system
-* B5: third-party store.
-  - Google GCS is straightforward here, and documented in [third party stores](./third-party.html).
+    - long-long distance link to the test system.
+      If you are testing remotely, this is implicit.
+      If you are testing within AWS infrastructure, it MUST be a different region.
+* `B5`:  third-party store.
+  - SHOULD: Use Google GCS as documented in [third party stores](./third-party.html).
+  - MAY: Any other third party store you can access.
 
 Testing with a least one third-party store is critical, as is an S3 Express store.
 Ideally, test with multiple third-party stores.
 
 
-| Id   | Class             | Config                                                    |
-|------|-------------------|-----------------------------------------------------------|
-| B1   | S3 standard       | SSE-KMS; Has S3 server logging to B2                      |
-| B2   | S3 standard       | Path style access, versioned, MUST BE same region as B1.  |
-| B2AP | Access Point      | Access Point to B2 also with access point (TLS 1.3+ only) |
-| B3   | S3 express        | Default configurations                                    |
-| B4   | S3 standard       | Long haul link in US and access point access              |
-| B5   | Third-party store | Google GCS or other third-party store                     |
+| Id     | Class             | Config                                                    |
+|--------|-------------------|-----------------------------------------------------------|
+| `B1`   | S3 standard       | SSE-KMS; Has S3 server logging to B2                      |
+| `B2`   | S3 standard       | Path style access, versioned, MUST BE same region as B1.  |
+| `B2AP` | Access Point      | Access Point to B2 also with access point (TLS 1.3+ only) |
+| `B3`   | S3 express        | Default configurations                                    |
+| `B4`   | S3 standard       | Long haul link in US and access point access              |
+| `B5`   | Third-party store | Google GCS or other third-party store                     |
 
 These are the core storage class/configurations which are used in production,
 hence are part of the qualification process.
@@ -182,9 +201,9 @@ One of the buckets B1-B4 MUST be in a region for which there is a FIPS endpoint,
 so that it can be configured to use it for access.
 That bucket must therefore be within a US region.
 
-A third party store *must* be tested.
+A third party store *MUST* be tested.
 
-*Note* in the XML below, replace B1, B2, etc with the names of your test buckets.
+*Note* in the XML below, replace `B1`, `B2`, etc. with the names of your test buckets.
 
 ```xml
 <property>
@@ -192,7 +211,6 @@ A third party store *must* be tested.
   <value>true</value>
 </property>
 ```
-
 
 All buckets which support lifecycle policies SHOULD be set to abort all pending uploads
 after 24h, delete all files after 7d.
@@ -206,10 +224,10 @@ You can start with a single host, but you will need to validate the behaviour of
 Within AWS
 1. EC2/kerberos deployment outside us-central and within a VPC whose network rules can be configured to not allow access to us-central/us-east.
    The build can done without that rule (needed for the artifact download), but a test run must be one locked down. This is to validate local region resolution.
-3. On a remote host, with any config for the AWS CLI (temporarily) renamed from `~/.aws/config`. to something else. 
+2. On a remote host, with any config for the AWS CLI (temporarily) renamed from `~/.aws/config`. to something else. 
    This is needed to make sure the SDK isn't reading region/endpoint info from that file, as
    it can do -and which can therefore accidentally hide regressions.
-   Note: renaming your config file before running CLI testing should be enough for this,.
+   Note: renaming your config file before running CLI testing may be enough for this.
 
 
 ### Configuration and extra services
@@ -237,18 +255,75 @@ and `etc/hadoop/core-site.xml` will look identical
 </configuration>
 ```
 
+Keeping these out of the hadoop source tree used to be to avoid accidentally committing secrets.
+It is now critical as a way of to stop AI tools scanning the files and including the secrets
+when it generates code for the project.
+
 #### Recommendations
 
 Initialize that `~/config/` directory as a *local* github repo, it is easier to
-see what you've broken. Obviously you MUST NOT push it to any remote repo if it contains
+see what you've broken.
+Obviously you MUST NOT push it to any remote repo if it contains
 your AWS secrets.
 
 Have a separate XInclude file for the test-related settings for each endpoint, to
 make switching between them easier.
 
+### Test Buckets
 
-Step 1: Test bucket B1 with configurations as below. This ensures:
-* Assumed role enabled - Required for  ITestAssumeRole tests
+Base test environment setup
+This MUST define the test name in the properties
+`test.fs.s3a.name` and `fs.contract.test.fs.s3a`.
+
+When testing different buckets the option `test.fs.s3a.name` will need to be
+set to the name of the specific bucket.
+
+```xml
+
+<configuration>
+  <property>
+    <name>test.fs.s3a.name</name>
+    <value>B1</value>
+  </property>
+
+  <property>
+    <name>fs.contract.test.fs.s3a</name>
+    <value>${test.fs.s3a.name}</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>${YOUR_ACCESS_KEY}</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>${YOUR_SECRET_KEY}</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>fs.iostatistics.logging.level</name>
+    <value>info</value>
+  </property>
+  
+</configuration>
+```
+*Tip* You can create a set of properties for `test.fs.s3a.name`, one for each bucket,
+and comment out all but the active one ones.
+Unfortunately, S3 express bucket names cannot be used within XML comments as the `--` sequence is forbidden.
+
+It is simpler to prefix out all 
+
+##### B1
+
+Test bucket `B1` with configurations as below.
+This ensures:
+* Assumed role enabled - Required for `ITestAssumeRole` tests
 * Encryption set to SSE-KMS
 * Scale tests enabled
 * Contract tests enabled
@@ -257,48 +332,38 @@ Step 1: Test bucket B1 with configurations as below. This ensures:
 ```xml
 
 <configuration>
-    <property>
-       <name>test.fs.s3a.name</name>
-       <value>${B1}</value>
-    </property>
-    
-   <property>
-       <name>fs.contract.test.fs.s3a</name>
-       <value>${test.fs.s3a.name}</value>
-   </property>
-
-   <property>
-        <name>fs.s3a.access.key</name>
-        <value>${YOUR_ACCESS_KEY}</value>
-   </property>
+  <property>
+    <name>test.fs.s3a.name</name>
+    <value>${B1}</value>
+  </property>
 
   <property>
-      <name>fs.s3a.secret.key</name>
-      <value>${YOUR_SECRET_KEY}</value>
-   </property> 
-    
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
+  </property>
+  
   <property>
     <name>fs.s3a.assumed.role.arn</name>
     <value>$ROLE_ARN</value>
   </property>
 
   <property>
-    <name>fs.s3a.assumed.role.external.id</name>
+    <name>fs.s3a.bucket.B1.assumed.role.external.id</name>
     <value>test-id</value>
   </property>
 
   <property>
-    <name>fs.s3a.assumed.role.sts.endpoint</name>
+    <name>fs.s3a.bucket.B1.assumed.role.sts.endpoint</name>
     <value>$STSENDPOINT</value>
   </property>
 
   <property>
-    <name>fs.s3a.assumed.role.sts.endpoint.region</name>
+    <name>fs.s3a.bucket.B1.assumed.role.sts.endpoint.region</name>
     <value>$REGION</value>
   </property>
     
   <property>
-     <name>fs.s3a.encryption.algorithm</name>
+     <name>fs.s3a.bucket.B1.encryption.algorithm</name>
      <value>SSE-KMS</value>
   </property>
 
@@ -312,14 +377,12 @@ Step 1: Test bucket B1 with configurations as below. This ensures:
     <value>$REGION</value>
   </property>
 
-  <property>
-    <name>fs.s3a.scale.test.enabled</name>
-    <value>true</value>
-  </property>
 </configuration>
 ```
+##### B2
 
-Step 2: Test bucket B2 with configuration as below. This ensures:
+Test bucket `B2` with configuration as below.
+This ensures:
 * Analytics stream is used for all reading
 * Path style access is enabled
 * Scale tests enabled
@@ -328,137 +391,87 @@ Step 2: Test bucket B2 with configuration as below. This ensures:
 
 <configuration>
   <property>
-    <name>test.fs.s3a.name</name>
-    <value>${B2}</value>
+    <name>X.test.fs.s3a.name</name>
+    <value>B2</value>
   </property>
 
   <property>
-    <name>fs.s3a.endpoint.region</name>
-    <value>${B2_Region}</value>
+    <name>fs.s3a.bucket.B2.endpoint.region</name>
+    <value>B2_Region</value>
   </property>
-
+  
   <property>
-    <name>fs.contract.test.fs.s3a</name>
-    <value>${test.fs.s3a.name}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.access.key</name>
-    <value>${YOUR_ACCESS_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.secret.key</name>
-    <value>${YOUR_SECRET_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.scale.test.enabled</name>
+    <name>fs.s3a.bucket.B2.path.style.access</name>
     <value>true</value>
   </property>
 
   <property>
-    <name>fs.s3a.path.style.access</name>
-    <value>true</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.input.stream.type</name>
+    <name>fs.s3a.bucket.B2.input.stream.type</name>
     <value>analytics</value>
   </property>
-
-</configuration>
-```
-
-Step 3: For your version bucket $B2, enable access points, using configuration as below:
-
-```xml
-
-<configuration>
+  
   <property>
-    <name>test.fs.s3a.name</name>
-    <value>${B2}</value>
+    <name>fs.s3a.bucket.B2.accesspoint.arn</name>
+    <value>B2 ACCESS_POINT_ARN</value>
   </property>
 
   <property>
-    <name>fs.s3a.endpoint.region</name>
-    <value>${B2_Region}</value>
-  </property>
-
-  <property>
-    <name>fs.contract.test.fs.s3a</name>
-    <value>${test.fs.s3a.name}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.access.key</name>
-    <value>${YOUR_ACCESS_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.secret.key</name>
-    <value>${YOUR_SECRET_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.scale.test.enabled</name>
+    <name>fs.s3a.bucket.B2.accesspoint.required</name>
     <value>true</value>
   </property>
-
+  
   <property>
-    <name>fs.s3a.bucket.{B2}.accesspoint.arn</name>
+    <name>fs.s3a.bucket.B2.change.detection.source</name>
+    <value>versionid</value>
+  </property>
+  
+  <property>
+    <name>fs.s3a.bucket.B2.accesspoint.arn</name>
     <value>${ACCESS_POINT_ARN}</value>
   </property>
+  <property>
+    <name>fs.s3a.bucket.B2.fast.upload.buffer</name>
+    <value>array</value>
+  </property>
+  
+  <property>
+    <name>fs.s3a.bucket.B2.multipart.size</name>
+    <value>32M</value>
+  </property>
 
   <property>
-    <name>fs.s3a.bucket.{B2}.accesspoint.required</name>
-    <value>true</value>
+    <name>fs.s3a.bucket.B2.multipart.threshold</name>
+    <value>${fs.s3a.bucket.B2.multipart.size}</value>
   </property>
 </configuration>
 ```
 
-Step 4: Test your S3-Express bucket with configurations as below:
+##### B3. S3-Express
+
+Configure your S3-Express bucket with configurations as below:
 
 ```xml
 
 <configuration>
   <property>
-    <name>test.fs.s3a.name</name>
-    <value>${B3}</value>
+    <name>X.test.fs.s3a.name</name>
+    <value>B3</value>
   </property>
 
   <property>
-    <name>fs.s3a.endpoint.region</name>
+    <name>fs.s3a.bucket.B3.endpoint.region</name>
     <value>${B3_Region}</value>
   </property>
 
   <property>
-    <name>fs.contract.test.fs.s3a</name>
-    <value>${test.fs.s3a.name}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.access.key</name>
-    <value>${YOUR_ACCESS_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.secret.key</name>
-    <value>${YOUR_SECRET_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.connection.expect.continue</name>
+    <name>fs.s3a.bucket.B3.connection.expect.continue</name>
     <value>false</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.scale.test.enabled</name>
-    <value>true</value>
   </property>
 
 </configuration>
 ```
+
+##### B3. Long Haul, FIPS
 
 Step 5: Test your long-haul bucket $B4, with configuration as below. This ensures:
 * CSE-KMS is enabled
@@ -467,63 +480,43 @@ Step 5: Test your long-haul bucket $B4, with configuration as below. This ensure
 ```xml
 
 <configuration>
-  <property>
-    <name>test.fs.s3a.name</name>
-    <value>${B4}</value>
-  </property>
 
   <property>
-    <name>fs.s3a.endpoint.region</name>
+    <name>fs.s3a.bucket.B4.endpoint.region</name>
     <value>${B4_REGION}</value>
   </property>
-
+  
   <property>
-    <name>fs.contract.test.fs.s3a</name>
-    <value>${test.fs.s3a.name}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.access.key</name>
-    <value>${YOUR_ACCESS_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.secret.key</name>
-    <value>${YOUR_SECRET_KEY}</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.encryption.key</name>
+    <name>fs.s3a.bucket.B4.encryption.key</name>
     <value>${ENCRYPTION_KEY_ARN}</value>
   </property>
 
   <property>
-    <name>fs.s3a.encryption.algorithm</name>
+    <name>fs.s3a.bucket.B4.encryption.algorithm</name>
     <value>CSE-KMS</value>
   </property>
 
   <property>
-    <name>fs.s3a.encryption.enabled</name>
+    <name>fs.s3a.bucket.B4.encryption.enabled</name>
     <value>true</value>
   </property>
 
   <property>
-    <name>fs.s3a.scale.test.enabled</name>
-    <value>true</value>
-  </property>
-
-  <property>
-    <name>fs.s3a.endpoint.fips</name>
+    <name>fs.s3a.bucket.B4.endpoint.fips</name>
     <value>true</value>
   </property>
 </configuration>
 ```
+##### B3. Third-Party Bucket
 
-Step 6: Test bucket $B5 with a third party store.
+Test bucket `B5` with a third party store.
+
+Use whatever settings are needed to connect to the store.
 
 #### Testing Open SSL
 
-On any test system other than an ARM-based macbook, require openssl for one of the buckets other than B1. An EC2 x86 instance is ideal for this.
+On any test system other than an ARM-based macbook, require openssl for one of the buckets other than B1.
+An EC2 x86 instance is ideal for this.
 
 ```xml
 <property>
@@ -543,11 +536,13 @@ See [wildfly-openssl](https://github.com/wildfly-security/wildfly-openssl/tree/m
 export BUCKETNAME=example-bucket-name
 export BUCKET=s3a://$BUCKETNAME
 
+export B1=s3a://bucket-1
 export B2=s3a://bucket-2
 
 # needs an bucket config to match
 export B2AP=s3a://bucket-2-access-point
 
+...etc
 ```
 
 
@@ -633,7 +628,7 @@ JIRA, and crosslink with a "testing discovered" relation
 ### Create a Full Release for Manual Testing
 
 Create a release binary
-```sh
+```bash
 mvn -T 1C clean package -Pdist -DskipTests -Dmaven.javadoc.skip=true
 ```
 
@@ -666,7 +661,8 @@ For release 2.30.27, the command would be
 git checkout tag/2.30.27
 ```
 
-This is for identifying what has changed in this release, including what has changed near code which is now failing in tests,
+This is for identifying what has changed in this release,
+including what has changed near code which is now failing in tests,
 as well as how major changes are affecting classes we use.
 Creating a new project in your IDE can assist here.
 
@@ -674,7 +670,8 @@ Creating a new project in your IDE can assist here.
 
 Allocate a whole week for this, _including preparing your test buckets and other storage details_
 
-This is not just for the overhead of the test setup, and execution, it assumes that there will be regressions and they will need fixing and retesting.
+This is not just for the overhead of the test setup, and execution,
+it assumes that there will be regressions and they will need fixing and retesting.
 
 
 ### Clean up all buckets.
@@ -709,8 +706,8 @@ software.amazon.awssdk:bundle:2.30.27
 
 If it compiles:
 1. Commit the change, including the version number in the title
-1. Push to github
-1. Create a PR -don't include the version there yet.
+2. Push to github
+3. Create a PR -don't include the version there yet.
 
 After this, leave yetus to do its work. 
 
@@ -721,11 +718,11 @@ Anyone who is collaborating should do the same.
 
 In `hadoop-aws` directory
 1. Run `mvn verify`
-1. Run the `ILoadTest*` load tests from your IDE or via maven through
+2. Run the `ILoadTest*` load tests from your IDE or via maven through
       `mvn verify -Dtest=skip -Dit.test=ILoadTest\* -Dscale`
    Look for regressions in performance as much as failures.
-1. Create the site with `mvn site -DskipTests`; look in `target/site` for the report.
-1. Review *every single `-output.txt` file in `hadoop-tools/hadoop-aws/target/failsafe-reports`,
+3. Create the site with `mvn site -DskipTests`; look in `target/site` for the report.
+4. Review *every single `-output.txt` file in `hadoop-tools/hadoop-aws/target/failsafe-reports`,
   paying particular attention to
   `org.apache.hadoop.fs.s3a.scale.ITestS3AInputStreamPerformance-output.txt`,
   as that is where changes in stream close/abort logic will surface.
@@ -741,7 +738,8 @@ waste of time at all.
 ### Testing all the buckets.
  
 Run the `ITests` against the other buckets.
-This is the most time consuming parts of the process, ~20 minutes for each run and the setup time, assuming they actually work.
+This is the most time consuming parts of the process,
+~20 minutes for each run and the setup time, assuming they actually work.
 
 What's the best order?
 * Start with your normal development bucket, as changes in behavior will be more obvious there.
@@ -759,7 +757,9 @@ which cause problems, especially whether new log messages have surfaced,
 or whether some packaging change breaks that CLI, odd performance problems surface.
 
 It would be straightforward to automate a sequence of commands,
-but we do not want to because actually having you use the command line from a terminal window is part of the qualification process, as it can identify issues.
+but we do not want to because actually having you use the command
+line from a terminal window is part of the qualification process, as you may identify issues. which
+the automated tests might not notice
 
 * Does it work?
 * Does it suddenly pause for long periods of time? 
@@ -768,16 +768,21 @@ but we do not want to because actually having you use the command line from a te
 
 These are things we need to know before end users find out.
 
-The commands below list the minimum set of commands to run; any more you can think of will be wonderful.
+The commands below list the _minimum_ set of commands to run; any more you can think of will be wonderful.
 
 In fact, an ideal outcome of qualifying a upgrade is that you have some new commands to add to this list.
 
 In particular, we could benefit from a lot more fault injection to see how well the SDK recovers from problems.
-This is often hard to test because S3 has such great reliability and because all of us developers working with cloud storage have fast and reliable networks.
-In production enough requests are made to S3 through our code every day that many applications will actually encounter transient failures of the S3 end points, which need to be recovered from.
-And people running this code are often doing it remotely, often through proxy, and sometimes to other S3 endpoints
+This is often hard to test because S3 has such great reliability and because all
+us developers working with cloud storage have fast and reliable networks.
+In production enough requests are made to S3 through our code every day that
+many applications will actually encounter transient failures of the S3 end points,
+all of which need to be recovered from.
 
-It is always interesting when doing this to enable IOStatistics reporting:
+Furthermore, people running this code are often doing it remotely, including through proxy, which
+adds a whole new way for things to fail. 
+
+It is always interesting when doing the CLI testing to enable IOStatistics reporting:
 ```xml
 <property>
   <name>fs.iostatistics.logging.level</name>
@@ -788,17 +793,19 @@ It is always interesting when doing this to enable IOStatistics reporting:
 From the root of the project, create a command line release
 
 ```sh
-mvn package -Pdist -DskipTests -Dmaven.javadoc.skip=true  -DskipShade
+mvn package -Pdist -DskipTests -Dmaven.javadoc.skip=true -DskipShade
 ```
 
 1. Change into the `hadoop-dist/target/hadoop-x.y.z-SNAPSHOT` dir.
-1. Copy a `core-site.xml` file into `etc/hadoop`.
-1. Set the `HADOOP_OPTIONAL_TOOLS` env var on the command line or `~/.hadoop-env`.
+2. Prepare and then copy a `core-site.xml` file into `etc/hadoop`.
+   This file SHALL reference the same XInclude settings as used on the module testings,
+   so as to ensure the CLI tests are working with the same options.
+3. Set the `HADOOP_OPTIONAL_TOOLS` env var on the command line or `~/.hadoop-env`.
 
 ```bash
 export HADOOP_OPTIONAL_TOOLS="hadoop-aws"
 ```
-### Build cloudstore sdk2
+### Build cloudstore
 
 The cloudstore diagnostics and utilities tool is used in the CLI qualification.
 
@@ -835,12 +842,13 @@ Those aren't necessarily blockers, but as not enough people run manual CLI comma
    you may be the the first person to notice it.
 
 If it is from `hadoop-common` or `hadoop-aws` then it may be a regression in these
-libraries, or a sy
+libraries.
 
 Example [HADOOP-19514. SecretManager logs at INFO in bin/hadoop calls](https://issues.apache.org/jira/browse/HADOOP-19514).
 
 Many of these tests check for success/failure. 
-Checking for this status is easy when your shell prompt flags any non-zero result, such as through [fish prompt](https://fishshell.com/docs/current/prompt.html).
+Checking for this status is easy when your shell prompt flags any non-zero result,
+such as through [fish prompt](https://fishshell.com/docs/current/prompt.html).
 Otherwise you need to `echo $?`(bash/zsh) or `echo $status` (fish) to see the outcome.
 
 ```bash
@@ -1030,7 +1038,6 @@ the hadoop fs commands.
 
 ```bash
 
-
 # ---------------------------------------------------
 # Cloudstore
 # ---------------------------------------------------
@@ -1121,14 +1128,10 @@ Udate the JIRA title to the version number actually used.
 Other changes needed to fix test failures MUST go into a
 separate commit in the same branch.
 
-
-## Handling compile/test failures
-
-* this is still a bit messy with duplicate text*
-
-
 ## What if there are failures?
 
+* this is still a bit messy with duplicate text*
+* 
 Be prepared to roll-back, re-iterate or code your way out of a regression.
 
 There may be some problem which surfaces with wider use, which can get
@@ -1189,16 +1192,17 @@ The cause has to be identified, then fixed.
 
 The default assumption should be "our assumptions about the behaviour of the SDK proved to be incorrect".
 Identifying what has gone wrong and aware those assumptions were made means that we can fix it ourselves
-Although this does require engineering effort, it doesn't guarantee that we can get a fix in without waiting for any changes from the AWS SDK developers.
+Although this does require engineering effort,
+it doesn't guarantee that we can get a fix in without waiting for any changes from the AWS SDK developers.
 
 ### Tracking down a test failure
 
 What to do if a test starts failing?
 
-First, add the stack traces to the PRs as a comment.
+**First**, add the stack traces to the PRs as a comment.
 As well as warning everyone of problems, it generates a searchable trace for the future.
 
-Next, *do not asssume that this is a bug in the tests*.
+**Next**, *do not asssume that this is a bug in the tests*.
 Assume that the test has identified a regression in production code.
 Hopefully it is just a test failure do to minor changes in SDK behavior -however this is the best case scenario.
 Assuming it is a test failure and so disabling the test case/assertion is a mistake.
@@ -1261,7 +1265,8 @@ If the issue has been reported and is still open:
 Create a matching issue for the AWS, providing the same information in as much detail as you can.
 Cross-link with the hadoop JIRA and vice versa.
 
-Then try and come up with a workaround. This may take a significant amount of effort.
+Then try and come up with a workaround.
+This may take a significant amount of effort.
 Note that the class `org.apache.hadoop.fs.s3a.impl.AwsSdkWorkarounds` is a place for workarounds...
 logging is already in there.
 
@@ -1272,7 +1277,8 @@ If one cannot be found then we are essentially blocked from upgrading the AWS SD
 We have had to do exactly this with problems related to library shading.
 
 You cannot expect a bug report to the SDK team to result in any urgent fixes.  
-This is "unfortunate" – especially given the petabytes of data which must be passed through the S3A connector to and from S3 every day.
+This is "unfortunate" – especially given the petabytes of data which
+is passed through the S3A connector to and from S3 every day.
 
 [//]: # (we suspect that there is some Conway's law-structure at work here.)
 
@@ -1315,7 +1321,8 @@ If there is a regression identified by anyone
 * I understand that the immediate action is a revert of the PR until addressed.
 * I will collaborate with others to identify and replicate the problem.
 * If a fix is needed in our code, I will collaborate on fixing the issue including writing automated/manual tests, and running them
-* If the regression is in AWS code, I will file the AWS issue. Furthermore, if I'm an AWS engineer: file an internal one.
+* If the regression is in AWS code, I will file the AWS issue.
+  Furthermore, if I'm an AWS engineer: file an internal one and emphasise to the SDK team that this matters to you
 * If a workaround is needed to fix the SDK problem, I will collaborate with others to design and implement the workaround.
 
 The key point here is to 
@@ -1342,7 +1349,7 @@ Cherrypick the upgrade and code fix patches in order.
 This is also the time to review the commit messages to see if they
 are correct.
 
-* MUST: rerun the `hadoop-aws` integration tests against AWS and third party stores.
+* MUST: rerun the `hadoop-aws` integration tests against AWS and third party stores (at least B1, B3 and B4)
 * MUST: do a release build and try out some of the commands against one AWS and one third party stores.
 
 Do not assume that just because it worked in trunk it'll work in a backport: the further back you go, the more the codebase diverges, the more likelihood of problems.
