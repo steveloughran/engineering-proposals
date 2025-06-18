@@ -165,7 +165,7 @@ Submitter MUST have the following buckets:
     - MUST: versioned (with versions configured to delete after 7 days)
     - MUST: configured with path style access.
     - MUST: configured to buffer writes into an array.
-      (Note, one test may OOM here, don't worry about it)
+      (Note, one `testMultiObjectDeleteLargeNumKeys` may OOM here, don't worry about it)
     - SHOULD have an access point defined.
       In this document`B2AP` is the bucket configuration
       to access it via the AP.
@@ -429,6 +429,7 @@ This ensures:
     <name>fs.s3a.bucket.B2.accesspoint.arn</name>
     <value>${ACCESS_POINT_ARN}</value>
   </property>
+  
   <property>
     <name>fs.s3a.bucket.B2.fast.upload.buffer</name>
     <value>array</value>
@@ -465,6 +466,16 @@ Configure your S3-Express bucket with configurations as below:
 
   <property>
     <name>fs.s3a.bucket.B3.connection.expect.continue</name>
+    <value>false</value>
+  </property>
+  
+  <property>
+    <name>fs.s3a.create.storage.class.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>test.fs.s3a.create.acl.enabled</name>
     <value>false</value>
   </property>
 
@@ -513,6 +524,53 @@ Test bucket `B5` with a third party store.
 
 Use whatever settings are needed to connect to the store.
 
+```xml
+<configuration>
+  <!-- === *** switches for third party tests *** === -->
+  <property>
+    <name>test.fs.s3a.encryption.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>test.fs.s3a.create.storage.class.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>test.fs.s3a.create.acl.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>test.fs.s3a.list.v1.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.scale.test.csvfile</name>
+    <value>
+    </value>
+    <description>file used in scale tests</description>
+  </property>
+
+  <property>
+    <name>test.fs.s3a.sts.enabled</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>test.fs.s3a.content.encoding.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>test.fs.s3a.requester.pays.file</name>
+    <value></value>
+  </property>
+</configuration>
+
+```
+
 #### Testing Open SSL
 
 On any test system other than an ARM-based macbook, require openssl for one of the buckets other than B1.
@@ -558,7 +616,7 @@ Getting others to help in the qualification process can help in multiple ways:
    as in-AWS versus out-AWS clients, where bandwidth and latency are very different.
 
 
-### Create two JIRAs 
+### Create two JIRAs : for the POM, one for any code changes
 
 First, create the upgrade JIRA.
 
@@ -743,11 +801,9 @@ This is the most time consuming parts of the process,
 
 What's the best order?
 * Start with your normal development bucket, as changes in behavior will be more obvious there.
+* S3 Express, as it is different enough and under-tested in normal development cycles.
 * Proceed to the third-party store, as that is the most likely to have problems.
-* Then the long-haul link
 * After that: whatever is most convenient.
-
-
 
 ## Manual, Exploratory testing.
 
