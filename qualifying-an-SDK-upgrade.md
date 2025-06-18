@@ -691,12 +691,12 @@ This helps verify that every test bucket is well-configured.
 In a new branch off trunk
 
 Update the value of `aws-java-sdk-v2.version` in `hadoop-project/pom.xml` to the new SDK version. 
-```xml
-    <aws-java-sdk-v2.version>2.30.27</aws-java-sdk-v2.version>
-
 ```
-In `LICENSE-binary` update the line declaring the version of the bundle.jar artifact included
-in distributions.
+<aws-java-sdk-v2.version>2.30.27</aws-java-sdk-v2.version>
+```
+In `LICENSE-binary` update the line declaring the version of the `bundle.jar` artifact included
+in full distributions.
+
 For example:
 ```
 software.amazon.awssdk:bundle:2.30.27
@@ -817,7 +817,6 @@ The cloudstore diagnostics and utilities tool is used in the CLI qualification.
 3. set the `CLOUDSTORE` env var to point to the JAR created
    `target/cloudstore-1.0.jar`
 
-# ---------------------------------------------------
 
 
 ### CLI commands
@@ -1081,8 +1080,6 @@ cat downloads/listing.txt
 # this will be faster on stores with bulk delete than those without. 
 
 bin/hadoop jar $CLOUDSTORE bulkdelete -verbose -page 5 $BUCKET/ downloads/listing.txt
-
-
 ```
 
 #### Final Commands
