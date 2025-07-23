@@ -386,7 +386,8 @@ This ensures:
 * Analytics stream is used for all reading
 * Path style access is enabled
 * Scale tests enabled
-
+* (Write) Rate limiting.
+* 
 ```xml
 
 <configuration>
@@ -444,6 +445,11 @@ This ensures:
     <name>fs.s3a.bucket.B2.multipart.threshold</name>
     <value>${fs.s3a.bucket.B2.multipart.size}</value>
   </property>
+  
+  <property>
+    <name>fs.s3a.bucket.B2.io.rate.limit</name>
+    <value>1000</value>
+  </property>
 </configuration>
 ```
 
@@ -482,11 +488,12 @@ Configure your S3-Express bucket with configurations as below:
 </configuration>
 ```
 
-##### B3. Long Haul, FIPS
+##### B3. Long Haul, FIPS, [Object Lock]
 
 Step 5: Test your long-haul bucket $B4, with configuration as below. This ensures:
 * CSE-KMS is enabled
-* FIPS enabled, assuming your long haul bucket is within a US region. 
+* FIPS enabled, assuming your long haul bucket is within a US region.
+* This would be a good setup to test Object Lock with. 
 
 ```xml
 
@@ -516,6 +523,12 @@ Step 5: Test your long-haul bucket $B4, with configuration as below. This ensure
     <name>fs.s3a.bucket.B4.endpoint.fips</name>
     <value>true</value>
   </property>
+  
+  <property>
+    <name>fs.s3a.bucket.B4.create.checksum.algorithm</name>
+    <value>CRC32C</value>
+  </property>
+
 </configuration>
 ```
 ##### B3. Third-Party Bucket
