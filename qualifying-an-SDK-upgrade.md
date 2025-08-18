@@ -89,7 +89,8 @@ The test process then:
 
 1. Run the usual integration test with as many of the optional features covered.
 Do not simply verify that everything appears to have worked:
-you must also look through all the log output to make sure there are no new warning messages being printed indicating a mismatch between how the S3A code is using the library and the library expects to be used. 
+you must also look through all the log output to make sure there are no new warning messages being printed
+indicating a mismatch between how the S3A code is using the library and the library expects to be used. 
 2. Build a binary release and test through the command line.
 3. Build and test as many downstream applications as you can.
 
@@ -171,7 +172,7 @@ Submitter MUST have the following buckets:
       to access it via the AP.
 * `B3`: S3 express
     - MAY: Using CSE-KMS
-* `B4`: S3 standard  (i.e. if you test in usw-2, this is is us-east
+* `B4`: S3 standard  (i.e. if you test in us-west-2, put this in us-east-1
     - S3 standard
     - us-central/us-east-1n
     - long-long distance link to the test system.
@@ -179,7 +180,9 @@ Submitter MUST have the following buckets:
       If you are testing within AWS infrastructure, it MUST be a different region.
 * `B5`:  third-party store.
   - SHOULD: Use Google GCS as documented in [third party stores](./third-party.html).
-  - MAY: Any other third party store you can access.
+  - MAY: Any other third party store you can access. Ideally one with bulk delete support, which
+    google's S3 endpoint lacks. This is needed to verify regressions related to MD-5 signing
+    of bulk deletes haven't failed. 
 
 Testing with a least one third-party store is critical, as is an S3 Express store.
 Ideally, test with multiple third-party stores.
