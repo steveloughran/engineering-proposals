@@ -61,7 +61,7 @@ Some example regressions encountered previously include:
   This was a valid design decision —however, it was unexpected.
   And again the warning message printed every time the stream was closed prematurely flooded application logs.
 * Instabilities in the shading of third-party libraries (slf4j, etc), with consequences such as the inability to enable any form of logging.
-* The shaded library continuing to declare dependencies which redundant due to the shading.
+* The shaded library continuing to declare dependencies which are redundant due to the shading.
 
 Third-party store support can also be trouble as it is not something tested by the AWS SDK team themselves (why would they?). This means our code may be one of the first contact points between an update of the SDK and third-party stores.
 
