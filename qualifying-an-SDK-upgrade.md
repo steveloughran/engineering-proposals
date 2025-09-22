@@ -54,13 +54,13 @@ The S3A connector is utterly dependent upon the AWS SDK; even a minor change can
 That is: changing a single number in a maven file can bring new features and needed bug fixes.
 It can also cause a lot of damage, albeit unintentionally.
 
-Some example regresssions encountered previously include:
+Some example regressions encountered previously include:
 * The SDK printing a warning message telling developers off every time a specific object in the SDK is instantiated
   This breaks all tests which look for specific output strings and runs a risk of generating support calls asking "why is my application telling me off?" 
 * A change in the semantics of calling `abort()` on a stream.
   This was a valid design decision —however, it was unexpected.
   And again the warning message printed every time the stream was closed prematurely flooded application logs.
-* Instabilities in the shading of third-party libraries (slf4j, etc)
+* Instabilities in the shading of third-party libraries (slf4j, etc), with consequences such as the inability to enable any form of logging.
 * The shaded library continuing to declare dependencies which redundant due to the shading.
 
 Third-party store support can also be trouble as it is not something tested by the AWS SDK team themselves (why would they?). This means our code may be one of the first contact points between an update of the SDK and third-party stores.
@@ -981,7 +981,7 @@ bin/hadoop fs -touchz $BUCKET/file
 # error "Is a directory"
 bin/hadoop fs -touchz $BUCKET
 
-# error: S3A: Cannot delete the root directory.
+# error: S3A: Cannot delete the root directory; will print Input/output error
 bin/hadoop fs -rm -r $BUCKET/
 
 # succeeds
@@ -1001,6 +1001,9 @@ bin/hadoop fs -ls $BUCKET/
 # expect success
 bin/hadoop fs -mv $BUCKET/file $BUCKET/file2
 
+# expect  File exists
+bin/hadoop fs -mv $BUCKET/file $BUCKET/file2
+
 # expect "No such file or directory"
 bin/hadoop fs -stat $BUCKET/file
 
@@ -1009,6 +1012,9 @@ bin/hadoop fs -stat $BUCKET/file2
 
 # expect "file exists"
 bin/hadoop fs -touchz $BUCKET/file2
+
+# expect No such file or directory
+bin/hadoop fs -mv $BUCKET/file $BUCKET/file3
 
 # expect success
 bin/hadoop fs -mv $BUCKET/file2 $BUCKET/dir-no-trailing
@@ -1099,6 +1105,9 @@ time bin/hadoop fs -mv $BUCKET/uploads/ $BUCKET/renamed
 
 # verify the rename worked
 bin/hadoop fs -ls -R $BUCKET/renamed
+
+# big distcp up 
+bin/hadoop distcp -numListstatusThreads 10  -overwrite -skipcrccheck -direct -m 8 share/hadoop/common/lib $BUCKET/common
 
 ```
 #### Cloudstore CLI
@@ -1199,11 +1208,11 @@ separate commit in the same branch.
 
 ## What if there are failures?
 
-* this is still a bit messy with duplicate text*
-* 
+*This is still a bit messy with duplicate text*
+
 Be prepared to roll-back, re-iterate or code your way out of a regression.
 
-There may be some problem which surfaces with wider use, which can get
+There may be some problems which surface with wider use, which can get
 fixed in a new AWS release, rolling back to an older one,
 or just worked around [HADOOP-14596](https://issues.apache.org/jira/browse/HADOOP-14596).
 
@@ -1519,7 +1528,7 @@ and has commented out entries for low-level debugging.
 # "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#     https://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
