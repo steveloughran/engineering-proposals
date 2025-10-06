@@ -60,7 +60,7 @@ Some example regressions encountered previously include:
 * A change in the semantics of calling `abort()` on a stream.
   This was a valid design decision —however, it was unexpected.
   And again the warning message printed every time the stream was closed prematurely flooded application logs.
-* Instabilities in the shading of third-party libraries (slf4j, etc), with consequences such as the inability to enable any form of logging.
+* Instabilities in the shading of third-party libraries (slf4j, etc.), with consequences such as the inability to enable any form of logging.
 * The shaded library continuing to declare dependencies which are redundant due to the shading.
 
 Third-party store support can also be trouble as it is not something tested by the AWS SDK team themselves (why would they?). This means our code may be one of the first contact points between an update of the SDK and third-party stores.
@@ -108,9 +108,7 @@ This is time-consuming and painful and for a simple needless hard work. This is 
 Congratulations! You have just taken on the task of qualifying the SDK release!
 
 
-
-
-## Stop! Is this a last minute action before a release?
+## Stop! Is this a last-minute action before a release?
 
 If so: _it is too late_.
 
@@ -135,11 +133,12 @@ AWS engineers the solutions.
 
 1. Look at [announcements](https://github.com/aws/aws-sdk-java-v2/discussions/categories/announcements)
    to see if there is a recent announcement related to S3 or core authentication.
-2. Look at [issues](https://github.com/aws/aws-sdk-java-v2/issues) to see what
+2. Look at [V2 SDK issues](https://github.com/aws/aws-sdk-java-v2/issues) to see what
    recently reported issues are which may cause problems.
    Look at the discussion, and if it is relevant, subscribe.
    Consider also examining our code to see if there is any actual exposure.
-   Do not just look at the open issues: look at all recent issues as there may be recently closed bugs whose fixes must be picked up; this
+   Do not just look at the open issues: look at all recent issues as there may be
+   recently closed bugs whose fixes must be picked up; this
    search identifies them.
 
 ## Test Setup
@@ -804,9 +803,7 @@ In `hadoop-aws` directory
 *Important*: reviewing the output may seem needless work but it has been where
 problems logged by the SDK have been found.
 If these are only found later, even though they were in the logs, it will be a sign
-that you didn't do enough due diligence.
-Given that finding the problems now is faster than finding them later, it is not a
-waste of time at all.
+that you didn't do enough due diligence -your credibility will decrease.
 
 
 ### Testing all the buckets.
@@ -1329,7 +1326,7 @@ This is a problem, the seriousness depends on the nature of the issue.
 
 #### Look for an existing SDK issue
 
-Search [AWS v2 SDK isues](https://github.com/aws/aws-sdk-java-v2/issues) for
+Search [AWS v2 SDK issues](https://github.com/aws/aws-sdk-java-v2/issues) for
 reports of the topic.
 Include recently closed issues, as it may have been fixed.
 
