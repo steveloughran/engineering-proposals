@@ -319,7 +319,7 @@ set to the name of the specific bucket.
 and comment out all but the active one ones.
 Unfortunately, S3 express bucket names cannot be used within XML comments as the `--` sequence is forbidden.
 
-It is simpler to prefix out all 
+It is simpler to prefix out entries with an X.
 
 ##### B1
 
@@ -1105,8 +1105,9 @@ bin/hadoop fs -ls -R $BUCKET/renamed
 
 # big distcp up 
 bin/hadoop distcp -numListstatusThreads 10  -overwrite -skipcrccheck -direct -m 8 share/hadoop/common/lib $BUCKET/common
-
 ```
+
+
 #### Cloudstore CLI
 
 The cloudstore commands help test lower-level aspects of the system, load generation
@@ -1158,6 +1159,184 @@ cat downloads/listing.txt
 # this will be faster on stores with bulk delete than those without. 
 
 bin/hadoop jar $CLOUDSTORE bulkdelete -verbose -page 5 $BUCKET/ downloads/listing.txt
+```
+
+### Semantics of incomplete uploads
+
+Amazon S3 Express may return directories with incomplete uploads pending underneath; other stores should not.
+
+The behavior can be tested by creating an incomplete file write, which is done on the command
+line by replicating the operations of a job running under the Magic S3A committer.
+
+```bash
+bin/hadoop fs -mkdir -p $BUCKET/incomplete/__magic_job-0/__base/subdir
+bin/hadoop fs -mkdir -p $BUCKET/incomplete/tail
+
+echo "magic file" > localfile
+# expected output to include # "File incomplete/subdir/magic2.txt will be visible when the job is committed"
+bin/hadoop fs -put -d localfile $BUCKET/incomplete/__magic_job-0/__base/subdir/magic.txt
+
+bin/hadoop fs -ls -R -h $BUCKET/incomplete/
+
+```
+
+The output of the listing operation is the interesting one, as on S3 Express a message will be printed about how a missing directory "incomplete/subdir" is being ignored.
+```
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/tail
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir
+-rw-rw-rw-   1 stevel stevel          0 2025-10-16 15:41 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt
+-rw-rw-rw-   1 stevel stevel       3724 2025-10-16 15:41 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt.pending
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/subdir
+2025-10-16 15:55:40,264 [main] INFO  fs.FileUtil (FileUtil.java:maybeIgnoreMissingDirectory(2108)) - Ignoring missing directory s3a://stevel--usw2-az1--x-s3/incomplete/subdir
+```
+
+This signifies that the LIST operation returned the prefix `incomplete/subdir`, but when the treewalking list algorithm attempted to list the path,
+an empty listing was returned by the store, which was mapped into a `FileNotFoundException` by the S3A code.
+The store's path capabilities declare that it may be inconsistent, so the ls treewalk code knows to log and continue at this point.
+
+Note also that the ordering of the list results is not alphabetical; this is presumably an aspect of the `ls` command.
+
+To verify that the store considers its listings consistent or inconsistent, use the cloudstore `pathcapability` command
+```bash
+bin/hadoop jar $CLOUDSTORE pathcapability fs.capability.directory.listing.inconsistent $BUCKET/incomplete
+echo $?
+```
+
+This returns 0 for the capability being found; and -1/255 for it being absent.
+
+A nonrecursive list may return them in a different order will not print any warning about ignoring a directory;
+this listing does not inspect the subdirectories, and on S3 Express does not yet know that "subdir" isn't present
+```bash
+bin/hadoop fs -ls $BUCKET/incomplete/
+```
+
+```
+Found 3 items
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/subdir
+drwxrwxrwx   - stevel stevel          0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/tail
+```
+
+Explicitly listing the path will raise an error (rather than have it swallowed).
+
+```bash
+# exit code will be 1
+bin/hadoop fs -ls -R $BUCKET/incomplete/subdir
+```
+This prints an error on all stores.
+```
+ls: `s3a://stevel--usw2-az1--x-s3//incomplete/subdir': No such file or directory
+```
+
+Cloudstore offers commands to get more detail on objects in the store
+
+The `list` does a deep `listFiles(path)` call, this will return all objects underneath -but the S3A code then strips out directory markers. 
+
+```bash
+bin/hadoop jar $CLOUDSTORE list $BUCKET/incomplete
+```
+
+THe result is the same on all stores: the zero byte "magic.txt" file and a json "magic.txt.pending" file
+```
+
+1. Listing files under s3a://stevel--usw2-az1--x-s3/incomplete
+==============================================================
+
+2025-10-16 16:04:01,227 [main] INFO  commands.ListFiles (StoreDurationInfo.java:<init>(91)) - Starting: Directory list
+2025-10-16 16:04:01,228 [main] INFO  commands.ListFiles (StoreDurationInfo.java:<init>(91)) - Starting: First listing
+2025-10-16 16:04:03,266 [main] INFO  commands.ListFiles (StoreDurationInfo.java:close(200)) - Duration of First listing: 00:00:02.038
+[0001]  s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt   0       (0 bytes)       0       stevel  stevel  [encrypted]
+[0002]  s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt.pending   3,724   (3 KB)  3724    stevel  stevel  [encrypted]
+2025-10-16 16:04:03,300 [main] INFO  commands.ListFiles (StoreDurationInfo.java:close(200)) - Duration of Directory list: 00:00:02.074
+
+Found 2 files, 1,037 milliseconds per file
+```
+
+```bash
+bin/hadoop jar $CLOUDSTORE listobjects $BUCKET/incomplete
+```
+
+The `listobjects` call returns all objects under a path.
+It gives the real view of the store, without any attempts to put a directory tree metaphor
+atop it.
+
+```
+
+1. Listing objects under s3a://stevel--usw2-az1--x-s3/incomplete
+================================================================
+
+[00001] "incomplete/tail/"      size: [0]       2025-10-16T14:54:00Z    tag: "1f0a9fe3c227498881ac13f373563882"
+[00002] "incomplete/__magic_job-0/__base/subdir/"       size: [0]       2025-10-16T14:41:17Z    tag: "33ccdc239a3443a7a400ac9e18eaf22e"
+[00003] "incomplete/__magic_job-0/__base/subdir/magic.txt"      size: [0]       2025-10-16T14:41:31Z    tag: "62a493dfeed6493292606c6fe632ffc3"
+[00004] "incomplete/__magic_job-0/__base/subdir/magic.txt.pending"      size: [3724]    2025-10-16T14:41:32Z    tag: "ad02da963cc0435e8036cd3c83e34ec3"
+
+Found 4 objects with total size 3724 bytes
+
+
+2. Marker count: 2
+==================
+
+incomplete/tail/
+incomplete/__magic_job-0/__base/subdir/
+```
+
+A call to `getfattr` to list all attributes will show that the magic.txt file has the attribute, `header.x-hadoop-s3a-magic-data-length`.
+That declares what the final length of the file will be be.
+
+```bash
+bin/hadoop fs -getfattr -d $BUCKET/incomplete/__magic_job-0/__base/subdir/magic.txt
+```
+
+Spark reads this so its progress indicators correctly reflect the amount of data
+generated.
+```
+# file: s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt
+header.Content-Length="0"
+header.Content-Type="application/octet-stream"
+header.ETag=""62a493dfeed6493292606c6fe632ffc3""
+header.Last-Modified="Thu Oct 16 15:41:31 BST 2025"
+header.x-amz-server-side-encryption="AES256"
+header.x-amz-storage-class="EXPRESS_ONEZONE"
+header.x-hadoop-s3a-magic-data-length="11"
+```
+The other headers are all those published by the store.
+The x-amz headers are custom to Amazon S3; they may or may not be replicated by other stores.
+The `header.ETag` header is one which is used for etag queries; stores which do not return this
+lack the ability to reject GET requests made with different etag versions, 
+preventing S3A from detect and failing on any changes in files updated while being read 
+
+The cloudstore `locatefiles` command uses the same 
+
+```bash
+bin/hadoop jar $CLOUDSTORE locatefiles $BUCKET/incomplete
+```
+
+Again, against an S3 Express bucket, we expect the "Ignoring missing directory".
+This MUST NOT be seen against any classic store.
+```
+1. Locating files under s3a://stevel--usw2-az1--x-s3/incomplete with thread count 4
+===================================================================================
+
+2025-10-16 17:23:30,794 [main] INFO  commands.LocateFiles (StoreDurationInfo.java:<init>(91)) - Starting: List located files
+2025-10-16 17:23:30,795 [main] INFO  commands.LocateFiles (StoreDurationInfo.java:<init>(91)) - Starting: LocateFileStatus execution
+2025-10-16 17:23:34,350 [GetFileInfo #3] INFO  fs.FileUtil (FileUtil.java:maybeIgnoreMissingDirectory(2108)) - Ignoring missing directory s3a://stevel--usw2-az1--x-s3/incomplete/subdir
+Fetched by: LocatedFileStatusFetcher[...]
+2025-10-16 17:23:34,359 [main] INFO  commands.LocateFiles (StoreDurationInfo.java:close(200)) - Duration of List located files: 00:00:03.566
+
+Found 0 files, 0 milliseconds per file
+Data size 0 bytes, 0 bytes per file
+```
+
+
+```bash
+
+bin/hadoop s3guard uploads -list $BUCKET
+bin/hadoop s3guard uploads -abort -force $BUCKET
+# final cleanup
+bin/hadoop fs -rm -R $BUCKET/incomplete/
+
 ```
 
 #### Final Commands
