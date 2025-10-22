@@ -394,7 +394,7 @@ This ensures:
 
 <configuration>
   <property>
-    <name>X.test.fs.s3a.name</name>
+    <name>test.fs.s3a.name</name>
     <value>B2</value>
   </property>
 
@@ -463,13 +463,14 @@ Configure your S3-Express bucket with configurations as below:
 
 <configuration>
   <property>
-    <name>X.test.fs.s3a.name</name>
+    <name>test.fs.s3a.name</name>
     <value>B3</value>
   </property>
 
   <property>
     <name>fs.s3a.bucket.B3.endpoint.region</name>
     <value>${B3_Region}</value>
+    <description>Make something up, do not use "ec2", "auto", or "sdk"</description>
   </property>
 
   <property>
@@ -478,17 +479,33 @@ Configure your S3-Express bucket with configurations as below:
   </property>
   
   <property>
-    <name>fs.s3a.create.storage.class.enabled</name>
+    <name>fs.s3a.bucket.B3.multipart.uploads.enabled</name>
     <value>false</value>
+    <description>Required for GCS</description>
   </property>
 
   <property>
-    <name>test.fs.s3a.create.acl.enabled</name>
+    <name>fs.s3a.bucket.stevel-gcs.committer.magic.enabled</name>
+    <value>false</value>
+    <description>Required for GCS</description>
+  </property>
+
+  <property>
+    <name>fs.s3a.bucket.stevel-gcs.checksum.calculation.enabled</name>
+    <value>false</value>
+    <description>Calculate and attach a message checksum on every operation. (default: true)</description>
+    <description>Required for GCS</description>
+  </property>
+  
+  <property>
+    <name>fs.s3a.create.storage.class.enabled</name>
     <value>false</value>
   </property>
 
 </configuration>
 ```
+
+Some of the options are required when working with google cloud storage; they are marked
 
 ##### B3. Long Haul, FIPS, [Object Lock]
 
@@ -573,8 +590,14 @@ Use whatever settings are needed to connect to the store.
     <name>test.fs.s3a.sts.enabled</name>
     <value>false</value>
   </property>
+  
   <property>
     <name>test.fs.s3a.content.encoding.enabled</name>
+    <value>false</value>
+  </property>
+  
+  <property>
+    <name>test.fs.s3a.create.acl.enabled</name>
     <value>false</value>
   </property>
 
@@ -941,11 +964,14 @@ bin/hadoop s3guard bucket-info $BUCKET
 # dir ABPnzm4LxSpC5K-A9MJ7ncqKyqEOnGbtDZ0enFNpeiUGcIR3B56s1wx00ZvUtCpSP9oajGBe
 # dir ABPnzm6zBHlLoohyBkVmHcqif6jY-ydTbdCG1bfreX57uF7exxwHINLFLF-WWHWfxhxIFHx1
 # Total 2 uploads found.
+# ---
+# Note: the command succeeds even if the multipart uploads are disabled.
 
 bin/hadoop s3guard uploads $BUCKET
 
 # repeat twice, once with "no" and once with "yes" as responses
 # if there were any uploads, they must be reported as deleted
+
 bin/hadoop s3guard uploads -abort $BUCKET
 
 # MUST be empty
@@ -1007,7 +1033,7 @@ bin/hadoop fs -stat $BUCKET/file
 # expect success and a timestamp to be printed
 bin/hadoop fs -stat $BUCKET/file2
 
-# expect "file exists"
+# not an error to repeate this.
 bin/hadoop fs -touchz $BUCKET/file2
 
 # expect No such file or directory
@@ -1033,15 +1059,15 @@ bin/hadoop fs -stat $BUCKET/dir-no-trailing
 bin/hadoop fs -stat $BUCKET/dir-no-trailing
 
 # expect success
-bin/hadoop fs -test -d  $BUCKET/dir-no-trailing
+bin/hadoop fs -test -d $BUCKET/dir-no-trailing
 
 # expect failure
-bin/hadoop fs -test -d  $BUCKET/dir-no-trailing/file2
+bin/hadoop fs -test -d $BUCKET/dir-no-trailing/file2
 
 # will return NONE unless bucket has checksums enabled. If it does, an etag is printed
 bin/hadoop fs -checksum $BUCKET/dir-no-trailing/file2
 
-# expect "etag" + a long string
+# expect "etag" + a long string except on a store without etags
 bin/hadoop fs -D fs.s3a.etag.checksum.enabled=true -checksum $BUCKET/dir-no-trailing/file2
 
 # expect NONE
@@ -1077,7 +1103,8 @@ bin/hdfs fetchdt -renew secrets.bin
 
 bin/hadoop fs -mkdir $BUCKET/uploads
 
-# expect successful upload
+# expect successful upload of a file which can be found
+bin/hadoop fs -stat share/hadoop/tools/lib/*bundle*jar
 time bin/hadoop fs -copyFromLocal -t 10  share/hadoop/tools/lib/*bundle*jar $BUCKET/uploads
 
 
@@ -1104,7 +1131,7 @@ time bin/hadoop fs -mv $BUCKET/uploads/ $BUCKET/renamed
 bin/hadoop fs -ls -R $BUCKET/renamed
 
 # big distcp up 
-bin/hadoop distcp -numListstatusThreads 10  -overwrite -skipcrccheck -direct -m 8 share/hadoop/common/lib $BUCKET/common
+time bin/hadoop distcp -numListstatusThreads 10  -overwrite -skipcrccheck -direct -m 8 share/hadoop/common/lib $BUCKET/common
 ```
 
 
@@ -1124,14 +1151,19 @@ the hadoop fs commands.
 bin/hadoop jar $CLOUDSTORE bucketmetadata $BUCKET
 
 # stresses upload speed, and that the pool and timeout settings work
+# a store without multipart uploads (i.e. google gcs) will block for a very long time in close().
+# other stores should queue work as soon as it reached a 64M block size.
+# Note that for long close() operations, callbacks during the close() are critical.
+# discp relies on these progress callbacks for heartbeats, and if its workers don't report in on time
+# the worker process is killed. This is why rename-by-copy is so toxic here: no callbacks to make
+# and big file renames can trigger timeout.
 time bin/hadoop jar $CLOUDSTORE bandwidth 512M $BUCKET/testfile
 
 # repeat for analytics policy
 time bin/hadoop jar $CLOUDSTORE bandwidth -policy analytics -rename 512M $BUCKET/testfile
 
 # repeat then close during the download (not the upload, we know that can hang)
-time bin/hadoop jar $CLOUDSTORE bandwidth -policy analytics -rename 512M $BUCKET/testfile
-
+time bin/hadoop jar $CLOUDSTORE bandwidth -policy analytics -rename 128M $BUCKET/testfile
 
 # bulk upload command, optimized for cloud storage.
 # Expect a fast parallelized upload of all the libraries; bundle.jar file is the slow one
@@ -1141,7 +1173,7 @@ time bin/hadoop jar $CLOUDSTORE cloudup share/hadoop/tools/lib/ $BUCKET/cloudup
 bin/hadoop fs -ls -R $BUCKET/cloudup
 
 # ---------------------------------------------------
-# Cloudstore Bulk delete uses the bulkdelete API;
+# Cloudstore Bulk delete uses the hadoop bulkdelete API;
 # the listing of files to delete must first be
 # generated.
 # ---------------------------------------------------
@@ -1162,6 +1194,8 @@ bin/hadoop jar $CLOUDSTORE bulkdelete -verbose -page 5 $BUCKET/ downloads/listin
 ```
 
 ### Semantics of incomplete uploads
+
+#### Skip this section on stores without multipart upload. 
 
 Amazon S3 Express may return directories with incomplete uploads pending underneath; other stores should not.
 
@@ -1209,10 +1243,8 @@ This returns 0 for the capability being found; and -1/255 for it being absent.
 A nonrecursive list may return them in a different order will not print any warning about ignoring a directory;
 this listing does not inspect the subdirectories, and on S3 Express does not yet know that "subdir" isn't present
 ```bash
-bin/hadoop fs -ls $BUCKET/incomplete/
-```
+> bin/hadoop fs -ls $BUCKET/incomplete/
 
-```
 Found 3 items
 drwxrwxrwx   - stevel stevel          0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0
 drwxrwxrwx   - stevel stevel          0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/subdir
@@ -1307,7 +1339,9 @@ The `header.ETag` header is one which is used for etag queries; stores which do 
 lack the ability to reject GET requests made with different etag versions, 
 preventing S3A from detect and failing on any changes in files updated while being read 
 
-The cloudstore `locatefiles` command uses the same 
+The cloudstore `locatefiles` command uses the same listing classes as is used for scanning
+directory trees in MapReduce queries and Spark jobs where the set of input files is not
+already known.
 
 ```bash
 bin/hadoop jar $CLOUDSTORE locatefiles $BUCKET/incomplete
