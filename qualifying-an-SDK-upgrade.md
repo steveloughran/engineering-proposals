@@ -1190,7 +1190,7 @@ cat downloads/listing.txt
 # then issue the bulk delete.
 # this will be faster on stores with bulk delete than those without. 
 
-bin/hadoop jar $CLOUDSTORE bulkdelete -verbose -page 5 $BUCKET/ downloads/listing.txt
+time bin/hadoop jar $CLOUDSTORE bulkdelete -verbose -page 5 $BUCKET/ downloads/listing.txt
 ```
 
 ### Semantics of incomplete uploads
@@ -1266,6 +1266,7 @@ Cloudstore offers commands to get more detail on objects in the store
 
 The `list` does a deep `listFiles(path)` call, this will return all objects underneath -but the S3A code then strips out directory markers. 
 
+*not supported for v1 buckets*
 ```bash
 bin/hadoop jar $CLOUDSTORE list $BUCKET/incomplete
 ```
