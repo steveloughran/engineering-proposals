@@ -57,7 +57,9 @@ As I noted, this was just a checklist CVE, but it was one we needed in Parquet 1
 To help get this ready for a new release, rather than expect others to fix it on my timeline, I created the PR.
 The first commit was just the dependency update --but the PR CI test run identified NPEs in test cases in the parquet-thrift module.
 I had to identify the cause, work on a fix under the supervision of a project committer, and then once they were happy it was approved and merged. 
+
 The committer, Fokko, had to put in effort too; reviewing is work of its own, but by taking on the debugging and doing the changes he wanted, he got a fix he was happy with in, I got a fix I was happy with in, and everyone downstream will get fewer audit complaints.
+
 I also know a bit more about Thrift internals, which is a learning that I wouldn't have got if I'd delegated it to AI.
 This lines me up for exploring issues in that codebase better, and understanding any stack traces from it slightly better.
 That is: along with the PR, I am improved (though as I had a carrot cake at the Canteen Cafe while I did the fix there, my cycling hill climbing is sadly degraded).
@@ -71,7 +73,7 @@ We're going be be able to use those AI tools to help deal with reports.
 ### Continuous Releases of OSS artifacts
 
 I think we are going to have adopt a radical release process of 90-95% automated monthly releases with the option of interim OOB security fixes.
-We moed from specific product versions to timestamps "something-2026.07.14" and stop pretending that Semantic Versioning offers any guarantees of compatibility. 
+We could think abovimg moving from specific product versions to timestamps ".2026.07.14" and stop pretending that Semantic Versioning offers any guarantees of compatibility. 
 
 At the same time, the spread of the Shai Halud worm through the NPM package ecosystem shows us that a fully automated release process is deadly, especially when coupled with a build system where naively trusting the latest release is the usual dependency model.
 
