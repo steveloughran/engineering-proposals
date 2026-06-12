@@ -1,11 +1,5 @@
 # Open Source and CVEs: the Forever War
 
-*CVE Debt*. noun.
-
-The security equivalent of technical debt, accrued by not proactively updating dependencies.
-Example usages
-- "I know moving from AWS V1 to V2 SDK is enough of a nightmare that it makes me feel they are punishing me for using the old SDK, but it's unmaintained and the CVE debt must be growing"
-- "wow, you're still on WinXP -your production line has enough CVE debt that I'm surprised you can get insurance"
 
 Since about February all OSS projects are getting a flood of email reports of people who got an AI tool, usually claude, to discover a vulnerability and who want credit for the CVE.
 We have to triage these into various categories
@@ -32,21 +26,22 @@ Nightly  releases? Maybe.
 
 ## Issue: Prioritisation
 
-Which would downstream organisations prefer those of us in open source projects to be working on,
+Which would downstream users of open source components prefer those of us who work on their dependencies to be working on,
 given there is a limited amount of time which can be allocated to this amongst all our other deliverables,
 and knowing there is nobody is this or any other OSS project who works full time on security?
 
 1. Dealing with what we consider to be real CVEs in our code?
 2. Upgrading transitive dependencies which we know are real vulnerabilities?
 3. Upgrading transitive dependencies of things where it's clearly not on any codepath we use?
+4. Answering questions about transitive dependency updates which can be determined by using the build tools to determine the current dependency graph, or about release plans which are all done in the open developer channels (mailing lists etc?)
 
 Right now, OSS projects do not have the capacity to cope with the amount of CVE related workload being dumped on us. 
 
 ## Issue: What Contributions are Appreciated?
 
-OSS projects don't need to be given lists of "here are the CVEs our audit found", especially when those lists haven't even been categorised into what library it is in. I take the view "if the author can't be bothered to do that, why should I?". Both [dependabot](https://github.com/dependabot) and [OSV-Scanner](https://google.github.io/osv-scanner/) givr us better lists.
+OSS projects don't need to be given lists of "here are the CVEs our audit found", especially when those lists haven't even been categorised into what library it is in. I take the view "if the author can't be bothered to do that, why should I?". Both [dependabot](https://github.com/dependabot) and [OSV-Scanner](https://google.github.io/osv-scanner/) give us better lists.
 
-*The challenge with dependencies is not knowing that the previous releases have CVEs, everyone should assume that, it is in getting the update in such thar it doesn't break our project or those downstream. Even when projects strive for compatibility, the hardening they do as part of CVE mitigation can introduce (necessary) regressions.*
+*The challenge with dependencies is not knowing that the previous releases have CVEs, everyone should assume that, it is in getting the update in such that it doesn't break our project or those downstream. Even when projects strive for compatibility, the hardening they do as part of CVE mitigation can introduce (necessary) regressions.*
 
 
 If anyone really wants to get dependency uodates, especially "checklist cve updates" changes in on a timetable which works, they are going to have to be proactive here and with all the other projects that they consider critical parts of the supply chain. 
