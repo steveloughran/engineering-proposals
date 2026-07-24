@@ -901,13 +901,13 @@ export HADOOP_OPTIONAL_TOOLS="hadoop-aws"
 
 The cloudstore diagnostics and utilities tool is used in the CLI qualification.
 
-1. Check out https://github.com/steveloughran/cloudstore
-2. Build it against the new sdk
+1. Check out https://github.com/apache/hadoop-cloudstore/
+2. Build it against the new SDK
 
-   mvn clean package -Dhadoop.version=3.5.0-SNAPSHOT
+   mvn clean package -Dhadoop.version=3.6.0-SNAPSHOT
 
 3. set the `CLOUDSTORE` env var to point to the JAR created
-   `target/cloudstore-1.0.jar`
+ 
 
 
 
