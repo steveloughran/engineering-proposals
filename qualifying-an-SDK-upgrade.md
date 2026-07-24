@@ -26,9 +26,9 @@ RFC 2119.
 
 That is a quote from an
 [announcement of a somewhat incompatible change](https://github.com/aws/aws-sdk-java-v2/discussions/5802)
-which shipped in v 2.30.0 of the AWS SDK.
+which shipped in v2.30.0 of the AWS SDK.
 
-It highlights the SDK team's point of view: their job is work on the SDK to support AWS's own services.
+It highlights the SDK team's point of view: their job is to work on the SDK to support AWS's own services.
 Compatibility with third party services is not their problem, and they do not test against such stores.
 
 This makes sense from their perspective: if someone implements their own S3 store, then it is
@@ -58,7 +58,7 @@ Some example regressions encountered previously include:
 * The SDK printing a warning message telling developers off every time a specific object in the SDK is instantiated
   This breaks all tests which look for specific output strings and runs a risk of generating support calls asking "why is my application telling me off?"
 * A change in the semantics of calling `abort()` on a stream.
-  This was a valid design decision —however, it was unexpected.
+  This was a valid design decision — however, it was unexpected.
   And again the warning message printed every time the stream was closed prematurely flooded application logs.
 * Instabilities in the shading of third-party libraries (slf4j, etc.), with consequences such as the inability to enable any form of logging.
 * The shaded library continuing to declare dependencies which are redundant due to the shading.
@@ -81,7 +81,7 @@ The challenge when qualifying an SDK is to make sure that the following conditio
 > test suites are necessary but not sufficient.
 
 From the outset, assume that there is a regression -and that your challenge is to find it.
-That is rather than the qualification being a process  "run some automated and manual test to show that all is well",
+That is, rather than the qualification being a process of "run some automated and manual tests to show that all is well",
 the task has to be approached as one of "find out what has broken, where and why".
 Then we can worry about how to fix.
 
@@ -95,13 +95,13 @@ indicating a mismatch between how the S3A code is using the library and the libr
 3. Build and test as many downstream applications as you can.
 
 > What happens if a regression does surface and the qualification process that did not find it
--and now the SDK upgrade has been applied?
+> -and now the SDK upgrade has been applied?
 
 We revert. Immediately. Then the process for identifying and trying to remedy the issue surfaces.
 If the library has already shipped, then this is harder.
-Here as well as identifying the root course we need to assess what is the impact of this in production deployment.
+Here as well as identifying the root cause we need to assess what is the impact of this in production deployment.
 We may need to issue a new Hadoop release.
-This is time-consuming and painful and for a simple needless hard work. This is why it is so important we have to get it right.
+This is time-consuming, painful, and needless hard work. This is why it is so important that we get it right.
 
 > What happens if I absolutely need a new feature in the latest SDK?
 
@@ -116,8 +116,8 @@ We need at least two weeks of stabilization to see if other developers
 encounter problems related to their own set-ups: endpoints, networks,
 credentials -as well as applications built on top of it.
 
-If it is for any feature: postpone the release or don't do the update
-Is it for a critical fix: postpone the release.
+If it is for a feature: postpone the release, or don't do the update.
+Is it for a critical fix? Postpone the release.
 
 Either way: we need that time to find things before shipping.
 
@@ -126,7 +126,7 @@ Either way: we need that time to find things before shipping.
 Use an SDK which has been out for two or more weeks.
 
 * If we do need a specific release for a fix: go with that one or later.
-* If it is a feature we need, do always try for a slightly later build.
+* If it is a feature we need, always try for a slightly later build.
 
 Features always take time to stabilize, so let others find the problems and
 AWS engineers the solutions.
@@ -153,8 +153,6 @@ for a very small set of S3 test buckets in AWS and elsewhere
 
 ### Test Buckets
 
-
-
 Submitter MUST have the following buckets:
 * `B1`:
  - S3 standard
@@ -171,9 +169,9 @@ Submitter MUST have the following buckets:
    to access it via the AP.
 * `B3`: S3 express
  - MAY: Using CSE-KMS
-* `B4`: S3 standard  (i.e. if you test in us-west-2, put this in us-east-1
+* `B4`: S3 standard  (i.e. if you test in us-west-2, put this in us-east-1)
  - S3 standard
- - us-central/us-east-1n
+ - us-central/us-east-1
  - long-long distance link to the test system.
    If you are testing remotely, this is implicit.
    If you are testing within AWS infrastructure, it MUST be a different region.
@@ -183,18 +181,18 @@ Submitter MUST have the following buckets:
  google's S3 endpoint lacks. This is needed to verify regressions related to MD-5 signing
  of bulk deletes haven't failed.
 
-Testing with a least one third-party store is critical, as is an S3 Express store.
+Testing with at least one third-party store is critical, as is an S3 Express store.
 Ideally, test with multiple third-party stores.
 
 
-| Id  | Class | Config |
+| Id     | Class             | Config                                                    |
 |--------|-------------------|-----------------------------------------------------------|
-| `B1`   | S3 standard | SSE-KMS; Has S3 server logging to B2 |
-| `B2`   | S3 standard | Path style access, versioned, MUST BE same region as B1.  |
-| `B2AP` | Access Point   | Access Point to B2 also with access point (TLS 1.3+ only) |
-| `B3`   | S3 express  | Default configurations   |
-| `B4`   | S3 standard | Long haul link in US and access point access  |
-| `B5`   | Third-party store | Google GCS or other third-party store   |
+| `B1`   | S3 standard       | SSE-KMS; Has S3 server logging to B2                      |
+| `B2`   | S3 standard       | Path style access, versioned, MUST BE same region as B1.  |
+| `B2AP` | Access Point      | Access Point to B2 (TLS 1.3+ only)                        |
+| `B3`   | S3 express        | Default configurations                                    |
+| `B4`   | S3 standard       | Long haul link in US and access point access              |
+| `B5`   | Third-party store | Google GCS or other third-party store                     |
 
 These are the core storage class/configurations which are used in production,
 hence are part of the qualification process.
@@ -225,8 +223,8 @@ You can start with a single host, but you will need to validate the behaviour of
 
 Within AWS
 1. EC2/kerberos deployment outside us-central and within a VPC whose network rules can be configured to not allow access to us-central/us-east.
-   The build can done without that rule (needed for the artifact download), but a test run must be one locked down. This is to validate local region resolution.
-2. On a remote host, with any config for the AWS CLI (temporarily) renamed from `~/.aws/config`. to something else.
+   The build can be done without that rule (needed for the artifact download), but a test run must be one locked down. This is to validate local region resolution.
+2. On a remote host, with any config for the AWS CLI (temporarily) renamed from `~/.aws/config` to something else.
    This is needed to make sure the SDK isn't reading region/endpoint info from that file, as
    it can do -and which can therefore accidentally hide regressions.
    Note: renaming your config file before running CLI testing may be enough for this.
@@ -252,13 +250,13 @@ and `etc/hadoop/core-site.xml` will look identical
 ```xml
 <configuration>
   <include xmlns="http://www.w3.org/2001/XInclude"
- href="///users/alice/config/auth-keys.xml">
+    href="///users/alice/config/auth-keys.xml">
   </include>
 </configuration>
 ```
 
 Keeping these out of the hadoop source tree used to be to avoid accidentally committing secrets.
-It is now critical as a way of to stop AI tools scanning the files and including the secrets
+It is now critical as a way to stop AI tools scanning the files and including the secrets
 when it generates code for the project.
 
 #### Recommendations
@@ -271,7 +269,7 @@ your AWS secrets.
 Have a separate XInclude file for the test-related settings for each endpoint, to
 make switching between them easier.
 
-### Test Buckets
+### Test Configuration Files
 
 Base test environment setup
 This MUST define the test name in the properties
@@ -284,178 +282,169 @@ set to the name of the specific bucket.
 
 <configuration>
   <property>
- <name>test.fs.s3a.name</name>
- <value>B1</value>
+    <name>test.fs.s3a.name</name>
+    <value>B1</value>
   </property>
 
   <property>
- <name>fs.contract.test.fs.s3a</name>
- <value>${test.fs.s3a.name}</value>
+    <name>fs.contract.test.fs.s3a</name>
+    <value>${test.fs.s3a.name}</value>
   </property>
 
   <property>
- <name>fs.s3a.access.key</name>
- <value>${YOUR_ACCESS_KEY}</value>
+    <name>fs.s3a.access.key</name>
+    <value>${YOUR_ACCESS_KEY}</value>
   </property>
 
   <property>
- <name>fs.s3a.secret.key</name>
- <value>${YOUR_SECRET_KEY}</value>
+    <name>fs.s3a.secret.key</name>
+    <value>${YOUR_SECRET_KEY}</value>
   </property>
 
   <property>
- <name>fs.s3a.scale.test.enabled</name>
- <value>true</value>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
   </property>
 
   <property>
- <name>fs.iostatistics.logging.level</name>
- <value>info</value>
+    <name>fs.iostatistics.logging.level</name>
+    <value>info</value>
   </property>
 
 </configuration>
 ```
 *Tip* You can create a set of properties for `test.fs.s3a.name`, one for each bucket,
-and comment out all but the active one ones.
+and comment out all but the active one.
 Unfortunately, S3 express bucket names cannot be used within XML comments as the `--` sequence is forbidden.
 
-It is simpler to prefix out entries with an X.
+It is simpler to prefix inactive entries with an X.
 
-##### B1
+#### B1
 
 Test bucket `B1` with configurations as below.
 This ensures:
-* Assumed role enabled - Required for `ITestAssumeRole` tests
+* Assumed role enabled - required for `ITestAssumeRole` tests
 * Encryption set to SSE-KMS
 * Scale tests enabled
 * Contract tests enabled
-* No region set - Ensures region resolution works
+* No region set - ensures region resolution works
 
 ```xml
 
 <configuration>
   <property>
- <name>test.fs.s3a.name</name>
- <value>${B1}</value>
+    <name>test.fs.s3a.name</name>
+    <value>${B1}</value>
   </property>
 
   <property>
- <name>fs.s3a.scale.test.enabled</name>
- <value>true</value>
+    <name>fs.s3a.scale.test.enabled</name>
+    <value>true</value>
   </property>
 
   <property>
- <name>fs.s3a.assumed.role.arn</name>
- <value>$ROLE_ARN</value>
+    <name>fs.s3a.assumed.role.arn</name>
+    <value>$ROLE_ARN</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B1.assumed.role.external.id</name>
- <value>test-id</value>
+    <name>fs.s3a.bucket.B1.assumed.role.external.id</name>
+    <value>test-id</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B1.assumed.role.sts.endpoint</name>
- <value>$STSENDPOINT</value>
+    <name>fs.s3a.bucket.B1.assumed.role.sts.endpoint</name>
+    <value>$STSENDPOINT</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B1.assumed.role.sts.endpoint.region</name>
- <value>$REGION</value>
+    <name>fs.s3a.bucket.B1.assumed.role.sts.endpoint.region</name>
+    <value>$REGION</value>
   </property>
 
   <property>
-  <name>fs.s3a.bucket.B1.encryption.algorithm</name>
-  <value>SSE-KMS</value>
+    <name>fs.s3a.bucket.B1.encryption.algorithm</name>
+    <value>SSE-KMS</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B1.encryption.key</name>
- <value>$KMSKEY</value>
-  </property>
-
-  <property>
- <name>fs.s3a.bucket.B1.encryption.cse.kms.region</name>
- <value>$REGION</value>
+    <name>fs.s3a.bucket.B1.encryption.key</name>
+    <value>$KMSKEY</value>
   </property>
 
 </configuration>
 ```
-##### B2
+#### B2
 
 Test bucket `B2` with configuration as below.
 This ensures:
 * Analytics stream is used for all reading
 * Path style access is enabled
+* Versioned bucket with change detection by version id
 * Scale tests enabled
-* (Write) Rate limiting.
-*
+* (Write) Rate limiting
+
 ```xml
 
 <configuration>
   <property>
- <name>test.fs.s3a.name</name>
- <value>B2</value>
+    <name>test.fs.s3a.name</name>
+    <value>B2</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.endpoint.region</name>
- <value>B2_Region</value>
+    <name>fs.s3a.bucket.B2.endpoint.region</name>
+    <value>B2_Region</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.path.style.access</name>
- <value>true</value>
+    <name>fs.s3a.bucket.B2.path.style.access</name>
+    <value>true</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.input.stream.type</name>
- <value>analytics</value>
+    <name>fs.s3a.bucket.B2.input.stream.type</name>
+    <value>analytics</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.accesspoint.arn</name>
- <value>B2 ACCESS_POINT_ARN</value>
+    <name>fs.s3a.bucket.B2.accesspoint.arn</name>
+    <value>${ACCESS_POINT_ARN}</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.accesspoint.required</name>
- <value>true</value>
+    <name>fs.s3a.bucket.B2.accesspoint.required</name>
+    <value>true</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.change.detection.source</name>
- <value>versionid</value>
+    <name>fs.s3a.bucket.B2.change.detection.source</name>
+    <value>versionid</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.accesspoint.arn</name>
- <value>${ACCESS_POINT_ARN}</value>
+    <name>fs.s3a.bucket.B2.fast.upload.buffer</name>
+    <value>array</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.fast.upload.buffer</name>
- <value>array</value>
+    <name>fs.s3a.bucket.B2.multipart.size</name>
+    <value>32M</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.multipart.size</name>
- <value>32M</value>
+    <name>fs.s3a.bucket.B2.multipart.threshold</name>
+    <value>${fs.s3a.bucket.B2.multipart.size}</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B2.multipart.threshold</name>
- <value>${fs.s3a.bucket.B2.multipart.size}</value>
-  </property>
-
-  <property>
- <name>fs.s3a.bucket.B2.io.rate.limit</name>
- <value>1000</value>
+    <name>fs.s3a.bucket.B2.io.rate.limit</name>
+    <value>1000</value>
   </property>
 </configuration>
 ```
 
-##### B3. S3-Express
+#### B3. S3-Express
 
 Configure your S3-Express bucket with configurations as below:
 
@@ -463,53 +452,25 @@ Configure your S3-Express bucket with configurations as below:
 
 <configuration>
   <property>
- <name>test.fs.s3a.name</name>
- <value>B3</value>
+    <name>test.fs.s3a.name</name>
+    <value>B3</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B3.endpoint.region</name>
- <value>${B3_Region}</value>
- <description>Make something up, do not use "ec2", "auto", or "sdk"</description>
+    <name>fs.s3a.bucket.B3.endpoint.region</name>
+    <value>${B3_Region}</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B3.connection.expect.continue</name>
- <value>false</value>
+    <name>test.fs.s3a.create.storage.class.enabled</name>
+    <value>false</value>
   </property>
-
-  <property>
- <name>fs.s3a.bucket.B3.multipart.uploads.enabled</name>
- <value>false</value>
- <description>Required for GCS</description>
-  </property>
-
-  <property>
- <name>fs.s3a.bucket.stevel-gcs.committer.magic.enabled</name>
- <value>false</value>
- <description>Required for GCS</description>
-  </property>
-
-  <property>
- <name>fs.s3a.bucket.stevel-gcs.checksum.calculation.enabled</name>
- <value>false</value>
- <description>Calculate and attach a message checksum on every operation. (default: true)</description>
- <description>Required for GCS</description>
-  </property>
-
-  <property>
- <name>fs.s3a.create.storage.class.enabled</name>
- <value>false</value>
-  </property>
-
 </configuration>
 ```
 
-Some of the options are required when working with google cloud storage; they are marked
+#### B4. Long Haul, FIPS, [Object Lock]
 
-##### B3. Long Haul, FIPS, [Object Lock]
-
-Step 5: Test your long-haul bucket $B4, with configuration as below. This ensures:
+Test your long-haul bucket $B4, with configuration as below. This ensures:
 * CSE-KMS is enabled
 * FIPS enabled, assuming your long haul bucket is within a US region.
 * This would be a good setup to test Object Lock with.
@@ -519,99 +480,141 @@ Step 5: Test your long-haul bucket $B4, with configuration as below. This ensure
 <configuration>
 
   <property>
- <name>fs.s3a.bucket.B4.endpoint.region</name>
- <value>${B4_REGION}</value>
+    <name>fs.s3a.bucket.B4.endpoint.region</name>
+    <value>${B4_REGION}</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B4.encryption.key</name>
- <value>${ENCRYPTION_KEY_ARN}</value>
+    <name>fs.s3a.bucket.B4.encryption.key</name>
+    <value>${ENCRYPTION_KEY_ARN}</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B4.encryption.algorithm</name>
- <value>CSE-KMS</value>
+    <name>fs.s3a.bucket.B4.encryption.algorithm</name>
+    <value>CSE-KMS</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B4.encryption.enabled</name>
- <value>true</value>
+    <name>fs.s3a.bucket.B4.encryption.enabled</name>
+    <value>true</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B4.endpoint.fips</name>
- <value>true</value>
+    <name>fs.s3a.bucket.B4.endpoint.fips</name>
+    <value>true</value>
   </property>
 
   <property>
- <name>fs.s3a.bucket.B4.create.checksum.algorithm</name>
- <value>CRC32C</value>
+    <name>fs.s3a.bucket.B4.create.checksum.algorithm</name>
+    <value>CRC32C</value>
   </property>
 
 </configuration>
 ```
-##### B3. Third-Party Bucket
+#### B5. Third-Party Bucket
 
 Test bucket `B5` with a third party store.
 
 Use whatever settings are needed to connect to the store.
 
 ```xml
+
 <configuration>
   <!-- === *** switches for third party tests *** === -->
   <property>
- <name>test.fs.s3a.encryption.enabled</name>
- <value>false</value>
+    <name>test.fs.s3a.encryption.enabled</name>
+    <value>false</value>
   </property>
 
   <property>
- <name>test.fs.s3a.create.storage.class.enabled</name>
- <value>false</value>
+    <name>test.fs.s3a.create.storage.class.enabled</name>
+    <value>false</value>
   </property>
 
   <property>
- <name>test.fs.s3a.create.acl.enabled</name>
- <value>false</value>
+    <name>test.fs.s3a.create.acl.enabled</name>
+    <value>false</value>
   </property>
 
   <property>
- <name>test.fs.s3a.list.v1.enabled</name>
- <value>false</value>
+    <name>test.fs.s3a.list.v1.enabled</name>
+    <value>false</value>
   </property>
 
   <property>
- <name>fs.s3a.scale.test.csvfile</name>
- <value>
- </value>
- <description>file used in scale tests</description>
+    <name>fs.s3a.scale.test.csvfile</name>
+    <value>
+    </value>
+    <description>file used in scale tests</description>
   </property>
 
   <property>
- <name>test.fs.s3a.sts.enabled</name>
- <value>false</value>
+    <name>test.fs.s3a.sts.enabled</name>
+    <value>false</value>
   </property>
 
   <property>
- <name>test.fs.s3a.content.encoding.enabled</name>
- <value>false</value>
+    <name>test.fs.s3a.content.encoding.enabled</name>
+    <value>false</value>
   </property>
 
   <property>
- <name>test.fs.s3a.create.acl.enabled</name>
- <value>false</value>
+    <name>test.fs.s3a.performance.enabled</name>
+    <value>false</value>
+    <description>Stores with stricter-than-S3 semantics fail the performance-mode tests.</description>
   </property>
 
   <property>
- <name>test.fs.s3a.requester.pays.file</name>
- <value></value>
+    <name>fs.s3a.ext.test.multipart.commit.consumes.upload.id</name>
+    <value>true</value>
+    <description>Set if a completed MPU commit consumes the upload ID so it is no
+    longer listable and abort reports NoSuchUploadException.</description>
   </property>
+
+  <property>
+    <name>test.fs.s3a.requester.pays.file</name>
+    <value></value>
+  </property>
+  
+  <property>
+    <name>fs.s3a.bucket.B5.endpoint.region</name>
+    <value>${B5_Region}</value>
+    <description>Make something up, do not use "ec2", "auto", or "sdk"</description>
+  </property>
+
+  <property>
+    <name>fs.s3a.bucket.B5.connection.expect.continue</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.bucket.B5.multipart.uploads.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.bucket.B5.committer.magic.enabled</name>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>fs.s3a.bucket.B5.checksum.calculation.enabled</name>
+    <value>false</value>
+    <description>Calculate and attach a message checksum on every operation. (default: true)</description>
+  </property>
+
+  <property>
+    <name>test.fs.s3a.create.storage.class.enabled</name>
+    <value>false</value>
+  </property>
+  
 </configuration>
 
 ```
 
 #### Testing Open SSL
 
-On any test system other than an ARM-based macbook, require openssl for one of the buckets other than B1.
+On any test system other than an ARM-based MacBook, use openssl for one of the buckets other than B1.
 An EC2 x86 instance is ideal for this.
 
 ```xml
@@ -625,7 +628,7 @@ As `wildfly.jar` doesn't include the ARM64 native libraries -just skip it there.
 See [wildfly-openssl](https://github.com/wildfly-security/wildfly-openssl/tree/main) for details.
 
 
-#### Set up the env vars B1 to B5 as the names of the bucket
+#### Set up the env vars B1 to B5 as the names of the buckets
 
 
 ```bash
@@ -635,7 +638,7 @@ export BUCKET=s3a://$BUCKETNAME
 export B1=s3a://bucket-1
 export B2=s3a://bucket-2
 
-# needs an bucket config to match
+# needs a bucket config to match
 export B2AP=s3a://bucket-2-access-point
 
 ...etc
@@ -654,11 +657,11 @@ Getting others to help in the qualification process can help in multiple ways:
    as in-AWS versus out-AWS clients, where bandwidth and latency are very different.
 
 
-### Create two JIRAs : for the POM, one for any code changes
+### Create two JIRAs: one for the POM, one for any code changes
 
 First, create the upgrade JIRA.
 
-Use the title "S3A: Upgrade AWS V2 SDK" ; once a specific version has
+Use the title "S3A: Upgrade AWS V2 SDK"; once a specific version has
 been selected it must be renamed to that version.
 
 In the JIRA include references to any AWS issues you have identified which can
@@ -707,7 +710,7 @@ Move this to a path outside the hadoop source tree.
 
 ```sh
 mkdir ../Releases
-mv hadoop-dist/target/hadoop-3.5.0-SNAPSHOT/ ../Releases/before-update
+mv hadoop-dist/target/hadoop-3.6.0-SNAPSHOT/ ../Releases/before-update
 ```
 
 Copy into its `etc/hadoop` dir the `core-site.xml` config referencing your
@@ -731,7 +734,7 @@ mvn -T 1C clean package -Pdist -DskipTests -Dmaven.javadoc.skip=true
 move it somewhere.
 
 ```bash
-mv hadoop-dist/target/hadoop-3.5.0-SNAPSHOT/ ../Releases/preflight
+mv hadoop-dist/target/hadoop-3.6.0-SNAPSHOT/ ../Releases/preflight
 ```
 
 ### Check out the AWS SDK
@@ -774,11 +777,11 @@ it assumes that there will be regressions and they will need fixing and retestin
 
 From your preflight release, clean out the buckets.
 ```sh
-bin/hadoop fs -rm $B1/\*
-bin/hadoop fs -rm $B2/\*
-bin/hadoop fs -rm $B3/\*
-bin/hadoop fs -rm $B4/\*
-bin/hadoop fs -rm $B5/\*
+bin/hadoop fs -rm -r $B1/\*
+bin/hadoop fs -rm -r $B2/\*
+bin/hadoop fs -rm -r $B3/\*
+bin/hadoop fs -rm -r $B4/\*
+bin/hadoop fs -rm -r $B5/\*
 ```
 This helps verify that every test bucket is well-configured.
 
@@ -805,7 +808,7 @@ If it compiles:
 2. Push to github
 3. Create a PR -don't include the version there yet.
 
-After this, leave yetus to do its work.
+After this, leave Yetus to do its work.
 
 As you continue your work, place test results and stack traces into the PR, making it visible to all.
 Anyone who is collaborating should do the same.
@@ -844,29 +847,29 @@ What's the best order?
 ## Manual, Exploratory testing.
 
 
-It is critical to manually through of the CLI to see if there have been changes there
+It is critical to manually go through the CLI to see if there have been changes there
 which cause problems, especially whether new log messages have surfaced,
-or whether some packaging change breaks that CLI, odd performance problems surface.
+whether some packaging change breaks the CLI, or whether odd performance problems surface.
 
 It would be straightforward to automate a sequence of commands,
 but we do not want to because actually having you use the command
-line from a terminal window is part of the qualification process, as you may identify issues. which
-the automated tests might not notice
+line from a terminal window is part of the qualification process, as you may identify issues
+which the automated tests might not notice.
 
 * Does it work?
 * Does it suddenly pause for long periods of time?
 * Are AWS SDK libraries printing warning messages? hadoop-aws code?
-* Has that some other change in the code base unrelated to the SDK which is now printing new warning messages/stopping things from working?
+* Has some other change in the code base, unrelated to the SDK, started printing new warning messages or stopping things from working?
 
 These are things we need to know before end users find out.
 
 The commands below list the _minimum_ set of commands to run; any more you can think of will be wonderful.
 
-In fact, an ideal outcome of qualifying a upgrade is that you have some new commands to add to this list.
+In fact, an ideal outcome of qualifying an upgrade is that you have some new commands to add to this list.
 
 In particular, we could benefit from a lot more fault injection to see how well the SDK recovers from problems.
-This is often hard to test because S3 has such great reliability and because all
-us developers working with cloud storage have fast and reliable networks.
+This is often hard to test because S3 has such great reliability and because we
+developers working with cloud storage have fast and reliable networks.
 In production enough requests are made to S3 through our code every day that
 many applications will actually encounter transient failures of the S3 end points,
 all of which need to be recovered from.
@@ -902,12 +905,14 @@ export HADOOP_OPTIONAL_TOOLS="hadoop-aws"
 The cloudstore diagnostics and utilities tool is used in the CLI qualification.
 
 1. Check out https://github.com/apache/hadoop-cloudstore/
-2. Build it against the new SDK
+2. Build it against the new SDK:
 
+   ```bash
    mvn clean package -Dhadoop.version=3.6.0-SNAPSHOT
+   ```
 
-3. set the `CLOUDSTORE` env var to point to the JAR created
- 
+3. Set the `CLOUDSTORE` env var to point to the JAR created.
+
 
 
 
@@ -930,7 +935,7 @@ Consider any new logged message an error.
 If it comes from a changed part of hadoop itself, other than hadoop-aws and hadoop-common
 track the cause down and file a related JIRA.
 Those aren't necessarily blockers, but as not enough people run manual CLI commands before the release phase
-   you may be the the first person to notice it.
+   you may be the first person to notice it.
 
 If it is from `hadoop-common` or `hadoop-aws` then it may be a regression in these
 libraries.
@@ -1033,7 +1038,7 @@ bin/hadoop fs -stat $BUCKET/file
 # expect success and a timestamp to be printed
 bin/hadoop fs -stat $BUCKET/file2
 
-# not an error to repeate this.
+# not an error to repeat this.
 bin/hadoop fs -touchz $BUCKET/file2
 
 # expect No such file or directory
@@ -1145,46 +1150,46 @@ the hadoop fs commands.
 
 A key command to test is storediag with the `-debug` option, to verify that the low level SDK and httpclient logs can be set to log at debug.
 ```
-bin/hadoop jar $CLOUDSTORE storediag -debug -w s3a://stevel--usw2-az1--x-s3/path
+bin/hadoop jar $CLOUDSTORE storediag -debug -w s3a://alice--usw2-az1--x-s3/path
 ```
 
-The `-debug` statement causes the relevant log4J logs to log at debug, so verifies that the shading within the library has kept the bonding the unshaded SLF4J API.
+The `-debug` statement causes the relevant log4J logs to log at debug, so verifies that the shading within the library has kept the binding to the unshaded SLF4J API.
 The log should be long, verbose and full of debug statements including from httpclient classes, and those of `awssdk`
 ```
-2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:execute(196)) - Delete path s3a://stevel--usw2-az1--x-s3/path - recursive true
+2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:execute(196)) - Delete path s3a://alice--usw2-az1--x-s3/path - recursive true
 2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:execute(197)) - Type = Empty Directory
-2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:execute(205)) - delete: Path is a directory: s3a://stevel--usw2-az1--x-s3/path
-2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:execute(225)) - deleting empty directory s3a://stevel--usw2-az1--x-s3/path
+2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:execute(205)) - delete: Path is a directory: s3a://alice--usw2-az1--x-s3/path
+2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:execute(225)) - deleting empty directory s3a://alice--usw2-az1--x-s3/path
 2025-10-24 16:57:24,823 [main] DEBUG impl.DeleteOperation (DeleteOperation.java:deleteObjectAtPath(381)) - delete: dir marker path/
 2025-10-24 16:57:24,823 [main] DEBUG s3a.Invoker (DurationInfo.java:<init>(80)) - Starting: delete
 2025-10-24 16:57:24,823 [main] DEBUG impl.S3AStoreImpl (DurationInfo.java:<init>(80)) - Starting: deleting path/
-2025-10-24 16:57:24,824 [main] DEBUG impl.LoggingAuditor (LoggingAuditor.java:modifyHttpRequest(435)) - [1] 3f275bbb-83b4-4289-85ca-39891b39c48c-00000026 Executing op_delete with {object_delete_request 'path/' size=1, mutating=true}; https://audit.example.org/hadoop/1/op_delete/3f275bbb-83b4-4289-85ca-39891b39c48c-00000026/?op=op_delete&p1=s3a://stevel--usw2-az1--x-s3/path&pr=stevel&ps=648f56b4-9eb3-4618-8819-94a4306a88ed&ks=1&cm=StoreDiag&id=3f275bbb-83b4-4289-85ca-39891b39c48c-00000026&t0=1&fs=3f275bbb-83b4-4289-85ca-39891b39c48c&t1=1&ts=1761321444455
-2025-10-24 16:57:24,824 [main] DEBUG awssdk.request (LoggerAdapter.java:debug(105)) - Sending Request: DefaultSdkHttpFullRequest(httpMethod=DELETE, protocol=https, host=stevel--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com, encodedPath=/path/, headers=[amz-sdk-invocation-id, Referer, User-Agent], queryParameters=[])
+2025-10-24 16:57:24,824 [main] DEBUG impl.LoggingAuditor (LoggingAuditor.java:modifyHttpRequest(435)) - [1] 3f275bbb-83b4-4289-85ca-39891b39c48c-00000026 Executing op_delete with {object_delete_request 'path/' size=1, mutating=true}; https://audit.example.org/hadoop/1/op_delete/3f275bbb-83b4-4289-85ca-39891b39c48c-00000026/?op=op_delete&p1=s3a://alice--usw2-az1--x-s3/path&pr=stevel&ps=648f56b4-9eb3-4618-8819-94a4306a88ed&ks=1&cm=StoreDiag&id=3f275bbb-83b4-4289-85ca-39891b39c48c-00000026&t0=1&fs=3f275bbb-83b4-4289-85ca-39891b39c48c&t1=1&ts=1761321444455
+2025-10-24 16:57:24,824 [main] DEBUG awssdk.request (LoggerAdapter.java:debug(105)) - Sending Request: DefaultSdkHttpFullRequest(httpMethod=DELETE, protocol=https, host=alice--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com, encodedPath=/path/, headers=[amz-sdk-invocation-id, Referer, User-Agent], queryParameters=[])
 2025-10-24 16:57:24,825 [main] DEBUG protocol.RequestAddCookies (RequestAddCookies.java:process(123)) - CookieSpec selected: default
 2025-10-24 16:57:24,825 [main] DEBUG protocol.RequestAuthCache (RequestAuthCache.java:process(77)) - Auth cache not set in the context
-2025-10-24 16:57:24,825 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:requestConnection(267)) - Connection request: [route: {s}->https://stevel--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443][total available: 2; route allocated: 2 of 512; total allocated: 2 of 512]
-2025-10-24 16:57:24,825 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:leaseConnection(312)) - Connection leased: [id: 2][route: {s}->https://stevel--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443][total available: 1; route allocated: 2 of 512; total allocated: 2 of 512]
+2025-10-24 16:57:24,825 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:requestConnection(267)) - Connection request: [route: {s}->https://alice--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443][total available: 2; route allocated: 2 of 512; total allocated: 2 of 512]
+2025-10-24 16:57:24,825 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:leaseConnection(312)) - Connection leased: [id: 2][route: {s}->https://alice--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443][total available: 1; route allocated: 2 of 512; total allocated: 2 of 512]
 2025-10-24 16:57:24,825 [main] DEBUG conn.DefaultManagedHttpClientConnection (LoggingManagedHttpClientConnection.java:setSocketTimeout(88)) - http-outgoing-2: set socket timeout to 15000
 2025-10-24 16:57:24,825 [main] DEBUG conn.DefaultManagedHttpClientConnection (LoggingManagedHttpClientConnection.java:setSocketTimeout(88)) - http-outgoing-2: set socket timeout to 15000
 2025-10-24 16:57:24,825 [main] DEBUG execchain.MainClientExec (MainClientExec.java:execute(255)) - Executing request DELETE /path/ HTTP/1.1
 2025-10-24 16:57:24,825 [main] DEBUG execchain.MainClientExec (MainClientExec.java:execute(266)) - Proxy auth state: UNCHALLENGED
 2025-10-24 16:57:24,825 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(133)) - http-outgoing-2 >> DELETE /path/ HTTP/1.1
-2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> Host: stevel--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com
+2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> Host: alice--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com
 2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> amz-sdk-invocation-id: 29bf3bad-6a45-9a0a-195a-18ea15289282
 2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> amz-sdk-request: attempt=1; max=3
 2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> Authorization: AWS4-HMAC-SHA256 Credential=AKIASHFDIJDQIQLMQDVQ/20251024/us-west-2/s3express/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;host;referer;x-amz-content-sha256;x-amz-date, Signature=14a5bd504a4d3623a8a118cc7d0f0a4a75f30bca12471ac73ecd09f138726fb5
-2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> Referer: https://audit.example.org/hadoop/1/op_delete/3f275bbb-83b4-4289-85ca-39891b39c48c-00000026/?op=op_delete&p1=s3a://stevel--usw2-az1--x-s3/path&pr=stevel&ps=648f56b4-9eb3-4618-8819-94a4306a88ed&ks=1&cm=StoreDiag&id=3f275bbb-83b4-4289-85ca-39891b39c48c-00000026&t0=1&fs=3f275bbb-83b4-4289-85ca-39891b39c48c&t1=1&ts=1761321444455
-2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> User-Agent: Hadoop 3.5.0-SNAPSHOT aws-sdk-java/2.35.4 md/io#sync md/http#Apache ua/2.1 api/S3#2.35.x os/Mac_OS_X#15.7.1 lang/java#1.8.0_362 md/OpenJDK_64-Bit_Server_VM#25.362-b09 md/vendor#Azul_Systems__Inc. md/en_GB m/F,G hll/cross-region
+2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> Referer: https://audit.example.org/hadoop/1/op_delete/3f275bbb-83b4-4289-85ca-39891b39c48c-00000026/?op=op_delete&p1=s3a://alice--usw2-az1--x-s3/path&pr=stevel&ps=648f56b4-9eb3-4618-8819-94a4306a88ed&ks=1&cm=StoreDiag&id=3f275bbb-83b4-4289-85ca-39891b39c48c-00000026&t0=1&fs=3f275bbb-83b4-4289-85ca-39891b39c48c&t1=1&ts=1761321444455
+2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> User-Agent: Hadoop 3.6.0-SNAPSHOT aws-sdk-java/2.35.4 md/io#sync md/http#Apache ua/2.1 api/S3#2.35.x os/Mac_OS_X#15.7.1 lang/java#1.8.0_362 md/OpenJDK_64-Bit_Server_VM#25.362-b09 md/vendor#Azul_Systems__Inc. md/en_GB m/F,G hll/cross-region
 2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> x-amz-content-sha256: UNSIGNED-PAYLOAD
 2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> X-Amz-Date: 20251024T155724Z
 2025-10-24 16:57:24,826 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onRequestSubmitted(136)) - http-outgoing-2 >> Connection: Keep-Alive
 2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "DELETE /path/ HTTP/1.1[\r][\n]"
-2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "Host: stevel--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com[\r][\n]"
+2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "Host: alice--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com[\r][\n]"
 2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "amz-sdk-invocation-id: 29bf3bad-6a45-9a0a-195a-18ea15289282[\r][\n]"
 2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "amz-sdk-request: attempt=1; max=3[\r][\n]"
 2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "Authorization: AWS4-HMAC-SHA256 Credential=AKIASHFDIJDQIQLMQDVQ/20251024/us-west-2/s3express/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;host;referer;x-amz-content-sha256;x-amz-date, Signature=14a5bd504a4d3623a8a118cc7d0f0a4a75f30bca12471ac73ecd09f138726fb5[\r][\n]"
-2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "Referer: https://audit.example.org/hadoop/1/op_delete/3f275bbb-83b4-4289-85ca-39891b39c48c-00000026/?op=op_delete&p1=s3a://stevel--usw2-az1--x-s3/path&pr=stevel&ps=648f56b4-9eb3-4618-8819-94a4306a88ed&ks=1&cm=StoreDiag&id=3f275bbb-83b4-4289-85ca-39891b39c48c-00000026&t0=1&fs=3f275bbb-83b4-4289-85ca-39891b39c48c&t1=1&ts=1761321444455[\r][\n]"
-2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "User-Agent: Hadoop 3.5.0-SNAPSHOT aws-sdk-java/2.35.4 md/io#sync md/http#Apache ua/2.1 api/S3#2.35.x os/Mac_OS_X#15.7.1 lang/java#1.8.0_362 md/OpenJDK_64-Bit_Server_VM#25.362-b09 md/vendor#Azul_Systems__Inc. md/en_GB m/F,G hll/cross-region[\r][\n]"
+2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "Referer: https://audit.example.org/hadoop/1/op_delete/3f275bbb-83b4-4289-85ca-39891b39c48c-00000026/?op=op_delete&p1=s3a://alice--usw2-az1--x-s3/path&pr=stevel&ps=648f56b4-9eb3-4618-8819-94a4306a88ed&ks=1&cm=StoreDiag&id=3f275bbb-83b4-4289-85ca-39891b39c48c-00000026&t0=1&fs=3f275bbb-83b4-4289-85ca-39891b39c48c&t1=1&ts=1761321444455[\r][\n]"
+2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "User-Agent: Hadoop 3.6.0-SNAPSHOT aws-sdk-java/2.35.4 md/io#sync md/http#Apache ua/2.1 api/S3#2.35.x os/Mac_OS_X#15.7.1 lang/java#1.8.0_362 md/OpenJDK_64-Bit_Server_VM#25.362-b09 md/vendor#Azul_Systems__Inc. md/en_GB m/F,G hll/cross-region[\r][\n]"
 2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "x-amz-content-sha256: UNSIGNED-PAYLOAD[\r][\n]"
 2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "X-Amz-Date: 20251024T155724Z[\r][\n]"
 2025-10-24 16:57:24,827 [main] DEBUG http.wire (Wire.java:wire(73)) - http-outgoing-2 >> "Connection: Keep-Alive[\r][\n]"
@@ -1201,9 +1206,9 @@ The log should be long, verbose and full of debug statements including from http
 2025-10-24 16:57:25,005 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onResponseReceived(125)) - http-outgoing-2 << x-amz-id-2: Qco6wT6qri9zH
 2025-10-24 16:57:25,005 [main] DEBUG http.headers (LoggingManagedHttpClientConnection.java:onResponseReceived(125)) - http-outgoing-2 << date: Fri, 24 Oct 2025 15:57:25 GMT
 2025-10-24 16:57:25,005 [main] DEBUG execchain.MainClientExec (MainClientExec.java:execute(285)) - Connection can be kept alive for 60000 MILLISECONDS
-2025-10-24 16:57:25,005 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:releaseConnection(344)) - Connection [id: 2][route: {s}->https://stevel--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443] can be kept alive for 60.0 seconds
+2025-10-24 16:57:25,005 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:releaseConnection(344)) - Connection [id: 2][route: {s}->https://alice--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443] can be kept alive for 60.0 seconds
 2025-10-24 16:57:25,005 [main] DEBUG conn.DefaultManagedHttpClientConnection (LoggingManagedHttpClientConnection.java:setSocketTimeout(88)) - http-outgoing-2: set socket timeout to 0
-2025-10-24 16:57:25,005 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:releaseConnection(351)) - Connection released: [id: 2][route: {s}->https://stevel--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443][total available: 2; route allocated: 2 of 512; total allocated: 2 of 512]
+2025-10-24 16:57:25,005 [main] DEBUG conn.PoolingHttpClientConnectionManager (PoolingHttpClientConnectionManager.java:releaseConnection(351)) - Connection released: [id: 2][route: {s}->https://alice--usw2-az1--x-s3.s3express-usw2-az1.us-west-2.amazonaws.com:443][total available: 2; route allocated: 2 of 512; total allocated: 2 of 512]
 2025-10-24 16:57:25,006 [main] DEBUG awssdk.request (LoggerAdapter.java:debug(105)) - Received successful response: 204, Request ID: 014a62cccf00019a16f067530509837b99ef0372, Extended Request ID: Qco6wT6qri9zH 
 ```
 
@@ -1222,7 +1227,7 @@ bin/hadoop jar $CLOUDSTORE bucketmetadata $BUCKET
 # a store without multipart uploads (i.e. google gcs) will block for a very long time in close().
 # other stores should queue work as soon as it reached a 64M block size.
 # Note that for long close() operations, callbacks during the close() are critical.
-# discp relies on these progress callbacks for heartbeats, and if its workers don't report in on time
+# distcp relies on these progress callbacks for heartbeats, and if its workers don't report in on time
 # the worker process is killed. This is why rename-by-copy is so toxic here: no callbacks to make
 # and big file renames can trigger timeout.
 time bin/hadoop jar $CLOUDSTORE bandwidth 512M $BUCKET/testfile
@@ -1253,7 +1258,7 @@ bin/hadoop fs -ls -C $BUCKET/cloudup > downloads/listing.txt
 cat downloads/listing.txt
 
 # edit out any log messages which have crept in
-(left as an exercise for the reader)
+# (left as an exercise for the reader)
 
 # then issue the bulk delete.
 # this will be faster on stores with bulk delete than those without.
@@ -1285,14 +1290,14 @@ bin/hadoop fs -ls -R -h $BUCKET/incomplete/
 
 The output of the listing operation is the interesting one, as on S3 Express a message will be printed about how a missing directory "incomplete/subdir" is being ignored.
 ```
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/tail
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir
--rw-rw-rw-   1 stevel stevel 0 2025-10-16 15:41 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt
--rw-rw-rw-   1 stevel stevel 3724 2025-10-16 15:41 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt.pending
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://stevel--usw2-az1--x-s3/incomplete/subdir
-2025-10-16 15:55:40,264 [main] INFO  fs.FileUtil (FileUtil.java:maybeIgnoreMissingDirectory(2108)) - Ignoring missing directory s3a://stevel--usw2-az1--x-s3/incomplete/subdir
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://alice--usw2-az1--x-s3/incomplete/tail
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0/__base
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir
+-rw-rw-rw-   1 stevel stevel 0 2025-10-16 15:41 s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt
+-rw-rw-rw-   1 stevel stevel 3724 2025-10-16 15:41 s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt.pending
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:55 s3a://alice--usw2-az1--x-s3/incomplete/subdir
+2025-10-16 15:55:40,264 [main] INFO  fs.FileUtil (FileUtil.java:maybeIgnoreMissingDirectory(2108)) - Ignoring missing directory s3a://alice--usw2-az1--x-s3/incomplete/subdir
 ```
 
 This signifies that the LIST operation returned the prefix `incomplete/subdir`, but when the treewalking list algorithm attempted to list the path,
@@ -1309,15 +1314,15 @@ echo $?
 
 This returns 0 for the capability being found; and -1/255 for it being absent.
 
-A nonrecursive list may return them in a different order will not print any warning about ignoring a directory;
+A nonrecursive list may return them in a different order and will not print any warning about ignoring a directory;
 this listing does not inspect the subdirectories, and on S3 Express does not yet know that "subdir" isn't present
 ```bash
 > bin/hadoop fs -ls $BUCKET/incomplete/
 
 Found 3 items
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/subdir
-drwxrwxrwx   - stevel stevel 0 2025-10-16 15:57 s3a://stevel--usw2-az1--x-s3/incomplete/tail
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:57 s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:57 s3a://alice--usw2-az1--x-s3/incomplete/subdir
+drwxrwxrwx   - stevel stevel 0 2025-10-16 15:57 s3a://alice--usw2-az1--x-s3/incomplete/tail
 ```
 
 Explicitly listing the path will raise an error (rather than have it swallowed).
@@ -1328,7 +1333,7 @@ bin/hadoop fs -ls -R $BUCKET/incomplete/subdir
 ```
 This prints an error on all stores.
 ```
-ls: `s3a://stevel--usw2-az1--x-s3//incomplete/subdir': No such file or directory
+ls: `s3a://alice--usw2-az1--x-s3//incomplete/subdir': No such file or directory
 ```
 
 Cloudstore offers commands to get more detail on objects in the store
@@ -1340,17 +1345,17 @@ The `list` does a deep `listFiles(path)` call, this will return all objects unde
 bin/hadoop jar $CLOUDSTORE list $BUCKET/incomplete
 ```
 
-THe result is the same on all stores: the zero byte "magic.txt" file and a json "magic.txt.pending" file
+The result is the same on all stores: the zero byte "magic.txt" file and a json "magic.txt.pending" file
 ```
 
-1. Listing files under s3a://stevel--usw2-az1--x-s3/incomplete
+1. Listing files under s3a://alice--usw2-az1--x-s3/incomplete
 ==============================================================
 
 2025-10-16 16:04:01,227 [main] INFO  commands.ListFiles (StoreDurationInfo.java:<init>(91)) - Starting: Directory list
 2025-10-16 16:04:01,228 [main] INFO  commands.ListFiles (StoreDurationInfo.java:<init>(91)) - Starting: First listing
 2025-10-16 16:04:03,266 [main] INFO  commands.ListFiles (StoreDurationInfo.java:close(200)) - Duration of First listing: 00:00:02.038
-[0001]  s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt   0 (0 bytes) 0 stevel  stevel  [encrypted]
-[0002]  s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt.pending   3,724   (3 KB)  3724 stevel  stevel  [encrypted]
+[0001]  s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt   0 (0 bytes) 0 stevel  stevel  [encrypted]
+[0002]  s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt.pending   3,724   (3 KB)  3724 stevel  stevel  [encrypted]
 2025-10-16 16:04:03,300 [main] INFO  commands.ListFiles (StoreDurationInfo.java:close(200)) - Duration of Directory list: 00:00:02.074
 
 Found 2 files, 1,037 milliseconds per file
@@ -1366,7 +1371,7 @@ atop it.
 
 ```
 
-1. Listing objects under s3a://stevel--usw2-az1--x-s3/incomplete
+1. Listing objects under s3a://alice--usw2-az1--x-s3/incomplete
 ================================================================
 
 [00001] "incomplete/tail/"   size: [0] 2025-10-16T14:54:00Z tag: "1f0a9fe3c227498881ac13f373563882"
@@ -1385,7 +1390,7 @@ incomplete/__magic_job-0/__base/subdir/
 ```
 
 A call to `getfattr` to list all attributes will show that the magic.txt file has the attribute, `header.x-hadoop-s3a-magic-data-length`.
-That declares what the final length of the file will be be.
+That declares what the final length of the file will be.
 
 ```bash
 bin/hadoop fs -getfattr -d $BUCKET/incomplete/__magic_job-0/__base/subdir/magic.txt
@@ -1394,7 +1399,7 @@ bin/hadoop fs -getfattr -d $BUCKET/incomplete/__magic_job-0/__base/subdir/magic.
 Spark reads this so its progress indicators correctly reflect the amount of data
 generated.
 ```
-# file: s3a://stevel--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt
+# file: s3a://alice--usw2-az1--x-s3/incomplete/__magic_job-0/__base/subdir/magic.txt
 header.Content-Length="0"
 header.Content-Type="application/octet-stream"
 header.ETag=""62a493dfeed6493292606c6fe632ffc3""
@@ -1407,7 +1412,7 @@ The other headers are all those published by the store.
 The x-amz headers are custom to Amazon S3; they may or may not be replicated by other stores.
 The `header.ETag` header is one which is used for etag queries; stores which do not return this
 lack the ability to reject GET requests made with different etag versions,
-preventing S3A from detect and failing on any changes in files updated while being read
+preventing S3A from detecting and failing on any changes in files updated while being read.
 
 The cloudstore `locatefiles` command uses the same listing classes as is used for scanning
 directory trees in MapReduce queries and Spark jobs where the set of input files is not
@@ -1420,12 +1425,12 @@ bin/hadoop jar $CLOUDSTORE locatefiles $BUCKET/incomplete
 Again, against an S3 Express bucket, we expect the "Ignoring missing directory".
 This MUST NOT be seen against any classic store.
 ```
-1. Locating files under s3a://stevel--usw2-az1--x-s3/incomplete with thread count 4
+1. Locating files under s3a://alice--usw2-az1--x-s3/incomplete with thread count 4
 ===================================================================================
 
 2025-10-16 17:23:30,794 [main] INFO  commands.LocateFiles (StoreDurationInfo.java:<init>(91)) - Starting: List located files
 2025-10-16 17:23:30,795 [main] INFO  commands.LocateFiles (StoreDurationInfo.java:<init>(91)) - Starting: LocateFileStatus execution
-2025-10-16 17:23:34,350 [GetFileInfo #3] INFO  fs.FileUtil (FileUtil.java:maybeIgnoreMissingDirectory(2108)) - Ignoring missing directory s3a://stevel--usw2-az1--x-s3/incomplete/subdir
+2025-10-16 17:23:34,350 [GetFileInfo #3] INFO  fs.FileUtil (FileUtil.java:maybeIgnoreMissingDirectory(2108)) - Ignoring missing directory s3a://alice--usw2-az1--x-s3/incomplete/subdir
 Fetched by: LocatedFileStatusFetcher[...]
 2025-10-16 17:23:34,359 [main] INFO  commands.LocateFiles (StoreDurationInfo.java:close(200)) - Duration of List located files: 00:00:03.566
 
@@ -1464,7 +1469,7 @@ rm -r downloads
 
 
 * Whatever applications you have which use S3A: build and run them before the upgrade,
-Then see if complete successfully in roughly the same time once the upgrade is applied.
+then see if they complete successfully in roughly the same time once the upgrade is applied.
 * Test any third-party endpoints you have access to.
 * Try different regions (especially a v4 only region), and encryption settings.
 * Any performance tests you have can identify slowdowns, which can be a sign
@@ -1475,20 +1480,7 @@ Then see if complete successfully in roughly the same time once the upgrade is a
 * Run the load tests, especially `ILoadTestS3ABulkDeleteThrottling`.
 
 
-## Committing patches to the upgrade branch
-
-The SDK and license upgrade MUST be in an isolated commit in the upgrade branch.
-
-The commit message MUST include the version number of the SDK used.
-
-Udate the JIRA title to the version number actually used.
-
-Other changes needed to fix test failures MUST go into a
-separate commit in the same branch.
-
 ## What if there are failures?
-
-*This is still a bit messy with duplicate text*
 
 Be prepared to roll-back, re-iterate or code your way out of a regression.
 
@@ -1507,7 +1499,7 @@ test of different endpoints, plan to fix it in the "test failures"
 JIRA if it is small enough.
 
 Test failures against third-party stores are a special case.
-If the test turns out to be using an AWS-only feature, then then
+If the test turns out to be using an AWS-only feature, then the
 test must be skippable, and test configurations for third-party stores
 declare this.
 
@@ -1545,11 +1537,11 @@ vs new operations.
 
 ### What to do if there is an SDK regression?
 
-Obviously, the PR canot be merged until resolved.
+Obviously, the PR cannot be merged until resolved.
 The cause has to be identified, then fixed.
 
 The default assumption should be "our assumptions about the behaviour of the SDK proved to be incorrect".
-Identifying what has gone wrong and aware those assumptions were made means that we can fix it ourselves
+Identifying what has gone wrong, and being aware that those assumptions were made, means that we can fix it ourselves.
 Although this does require engineering effort,
 it doesn't guarantee that we can get a fix in without waiting for any changes from the AWS SDK developers.
 
@@ -1560,9 +1552,9 @@ What to do if a test starts failing?
 **First**, add the stack traces to the PRs as a comment.
 As well as warning everyone of problems, it generates a searchable trace for the future.
 
-**Next**, *do not asssume that this is a bug in the tests*.
+**Next**, *do not assume that this is a bug in the tests*.
 Assume that the test has identified a regression in production code.
-Hopefully it is just a test failure do to minor changes in SDK behavior -however this is the best case scenario.
+Hopefully it is just a test failure due to minor changes in SDK behavior -that is the best case scenario.
 Assuming it is a test failure and so disabling the test case/assertion is a mistake.
 The root cause is still out there, waiting to surface again in production.
 
@@ -1586,14 +1578,14 @@ If it is a large change:
 2. Create a feature branch with the commit of #1 at the bottom.
 3. Get all the code reviewed by the normal process *but do not merge it once approved*
 4. The final merge should be done with a merge of the SDK in first, with that commit
-   message declaring it must be followed by the big patch (state the JIRA and PR IDs))
+   message declaring it must be followed by the big patch (state the JIRA and PR IDs).
 5. Apply the big patch immediately after the SDK update PR is merged, with a mention
    of that JIRA/PR ID in the commit message body.
 
 
 ### What if it is a bug in the AWS SDK itself?
 
-This is a problem, the seriousness depends on the nature of the issue.
+This is a problem; the seriousness depends on the nature of the issue.
 
 #### Create a Hadoop JIRA
 
@@ -1603,9 +1595,9 @@ This is a problem, the seriousness depends on the nature of the issue.
    It's complex enough that this is unlikely, but gaining familiarity with
    the SDK is a good investment.
 4. See if you can replicate it reliably manually or as a JUnit test.
-   A JUnit test is ideal as it makes regression testing straightforward -though as most of
-   the recent regressions have been related to service failures or jobs of an hour or more,
-   rare.
+   A JUnit test is ideal as it makes regression testing straightforward -though such tests are
+   rare, as most of the recent regressions have been related to service failures or jobs of an
+   hour or more.
 
 #### Look for an existing SDK issue
 
@@ -1620,7 +1612,7 @@ If the issue has been reported and is still open:
 
 #### Create an AWS SDK github issue if needed
 
-Create a matching issue for the AWS, providing the same information in as much detail as you can.
+Create a matching issue for AWS, providing the same information in as much detail as you can.
 Cross-link with the hadoop JIRA and vice versa.
 
 Then try and come up with a workaround.
@@ -1640,7 +1632,7 @@ is passed through the S3A connector to and from S3 every day.
 
 [//]: # (we suspect that there is some Conway's law-structure at work here.)
 
-[//]: # (Whoever maintains the SDK is not the same people who run the S3 service and that's priority does not appear to go to sort of library even though many of their premium customers are using our code. )
+[//]: # (Whoever maintains the SDK is not the same people who run the S3 service, and that priority does not appear to extend to this sort of library, even though many of their premium customers are using our code.)
 
 If this all seems a bit negative – do not panic.
 Most of the upgrades are straightforward and do not appear to cause any problems.
@@ -1649,14 +1641,15 @@ Most of the upgrades are straightforward and do not appear to cause any problems
 ## Declaring the PR ready to merge
 
 
-Storediag output of all stores are attached. for B1, diagnostics through an access point are also attached.
+Storediag output of all stores is attached. For B1, diagnostics through an access point are also attached.
 
 Then we have a set of attestations
 [ ] I have run the S3 ITests against B1;  no failures were observed.
+[ ] I have run the ITests against B2; no failures were observed.
 [ ] I have used distcp to collect the audit logs from B2 -logs spanning the timespan of the tests.
 [ ] I have run the ITests against B3; no failures were observed.
-[ ] I have run the ITests against B4; no failures were observed
-[ ] If available, I have run the ITests against B3; no failures were observed
+[ ] I have run the ITests against B4; no failures were observed.
+[ ] If available, I have run the ITests against B5; no failures were observed.
 [ ] I have compared the logs of the before and after runs; no differences were observed. (maybe we should provide a log4j format which logs at info and doesn't include time and thread IDs?)
 [ ] I have run the CLI tests against all buckets, no failures or changes in logs were observed
 [ ] I have added one or more new CLI tests to run; they are included in this PR. (forces submitter to think of new tests rather than set as "complete")
@@ -1664,14 +1657,14 @@ Then we have a set of attestations
 
 Then:
 
-1. Measure the execution time of before/after runs should be listed to see if there is any slowdown vs the previous version.
+1. Measure the execution time of the before/after runs to see if there is any slowdown vs the previous version.
 A simple `time mvn -T 1C verify -Dscale -Dparallel` of the hadoop-aws dir after just having done a `mvn clean install` to take that out of the timing would be enough.
 This is to identify major changes. Ideally this should be done on an EC2 VM, so there are no network-related issues.
 
 2. Check out the relevant tag of the aws-sdk-v2 and use ripgrep to count the # of matches of the pattern `\.warn\(` in those modules we care about.
 For files where there's a change, open them, get the history, see what has changed.
-This not just to identify where are being told of in a way which makes for noisy clients,
-it is to see if there are potentially things we are getting wrong and which should fix.
+This is not just to identify where we are being told off in a way which makes for noisy clients,
+it is to see if there are potentially things we are getting wrong and which we should fix.
 
 The PR submitter then has to make some commitments to followup on regressions.
 
@@ -1684,16 +1677,21 @@ If there is a regression identified by anyone
 * If a workaround is needed to fix the SDK problem, I will collaborate with others to design and implement the workaround.
 
 The key point here is to
-1. Make clear that and that whoever providing the update owns a lot of the upgrade problem, rather than expect others to handle it.
+1. Make clear that whoever provides the update owns a lot of the upgrade problem, rather than expect others to handle it.
 2. Highlight that regressions are blockers on upgrades.
 
-## Committing the work.
+## Committing the work
 
-The SDK update and any code changes MUST go in as separate commits into the trunk branch,
-to isolate the changes better.
+Throughout the work on the upgrade branch, the SDK and license upgrade MUST be kept in
+an isolated commit, and any changes needed to fix test failures MUST go into a
+separate commit in the same branch.
+
+When merging to the trunk branch, the SDK update and any code changes MUST go in as
+separate commits, to isolate the changes better.
 IF there are no code changes -excellent!
 
-Critical: include the AWS SDK version in the title of the commits.
+Critical: include the AWS SDK version in the title of the commits, and update the JIRA
+title to the version number actually used.
 
 1. Commit the library change PR, note in comments that it requires the follow-on patch.
 2. Code fix PR: If there have been multiple code changes to fix compatibility with the releases,
@@ -1707,7 +1705,7 @@ Cherrypick the upgrade and code fix patches in order.
 This is also the time to review the commit messages to see if they
 are correct.
 
-* MUST: rerun the `hadoop-aws` integration tests against AWS and third party stores (at least B1, B3 and B4)
+* MUST: rerun the `hadoop-aws` integration tests against AWS and third party stores (at least B1, B3, B4 and B5)
 * MUST: do a release build and try out some of the commands against one AWS and one third party stores.
 
 Do not assume that just because it worked in trunk it'll work in a backport: the further back you go, the more the codebase diverges, the more likelihood of problems.
